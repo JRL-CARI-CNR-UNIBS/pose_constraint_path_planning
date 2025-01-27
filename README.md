@@ -66,7 +66,7 @@ colcon build --symlink-install --cmake-args -DUSE_ROS1=False
 
 ## Execution
 
-Use the following commands to launch the necessary components:
+Use the following commands to launch the necessary components (source ros2_ws/install/setup.bash in each terminal before start):
 
 1. **Terminal 1**: Launch the UR robot driver with fake hardware:
    ```bash
