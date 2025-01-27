@@ -7,7 +7,20 @@
   <maintainer email="manuel.beschi@unibs.it">jacobi</maintainer>
   <license>TODO: License declaration</license>
 
+  <depend>moveit_collision_checker</depend>
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ur_ik_solver</buildtool_depend>
+  <buildtool_depend>moveit_msgs</buildtool_depend>
+  <depend>visualization_msgs</depend>
+  <depend>moveit_visual_tools</depend>
+  <depend>tf2_eigen</depend>
+  <depend>graph_core</depend>
+  <depend>graph_display</depend>
+  <depend>urdfdom</depend>
+  <depend>ik_solver</depend>
+  <depend>ur_ik_solver</depend>
+  <depend>ik_solver_core</depend>
+
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

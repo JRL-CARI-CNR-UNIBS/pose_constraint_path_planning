@@ -1,0 +1,4 @@
+appenders: ["file", "screen"]
+levels: ["debug", "debug"]
+pattern_layout: '[%M:%L]: %m%n'
+file_name: "pose_contraints_planner"

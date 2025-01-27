@@ -1,0 +1,23 @@
+pose_constraints_planner:
+  test_solver:
+      group_name: "ur_manipulator"
+      start_configuration: [0.0,-1.5708,1.5708,-1.5708,-1.5708,0.0]
+      goal_configuration:  [1.5708,-1.5708,1.5708,-1.5708,-1.5708,0.0]
+      utopia_tolerance: 0.05
+      extend: false
+      max_distance: 1.0
+      use_kdtree: true
+      checker_resolution: 0.01
+      parallel_checker_n_threads: 4
+      goal_bias: 0.1
+
+      libraries: ["libgraph_core.so","libmoveit_collision_checker.so"]
+
+      # planner: RRT, BiRRT, RRT*, ANYTIMERRT
+      planner_plugin: graph::core::RRTPlugin
+      sampler_plugin: graph::core::InformedSamplerPlugin
+      metrics_plugin: graph::core::EuclideanMetricsPlugin
+      checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin
+
+      max_angle_z: 0.3 # angle between z-axis,start and z-axis,rand frames in radians
+

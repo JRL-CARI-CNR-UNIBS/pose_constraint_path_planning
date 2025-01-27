@@ -1,0 +1,18 @@
+ur_ik_solver:
+  type: ik_solver/Ur10eIkSolver
+  base_frame: base_link #world # base frame of the chain
+  flange_frame: tool0 # end frame of the chain
+
+  tool_frame: tool0 # destination frame of the IK (it should be rigid attached to flange_frame)
+  desired_solutions: 32 # number of desired solution
+  joint_names:
+  - shoulder_pan_joint
+  - shoulder_lift_joint
+  - elbow_joint
+  - wrist_1_joint
+  - wrist_2_joint
+  - wrist_3_joint
+
+  min_stall_iterations: 100
+  max_stall_iterations: 1000
+  parallel_ik_mode: 2
