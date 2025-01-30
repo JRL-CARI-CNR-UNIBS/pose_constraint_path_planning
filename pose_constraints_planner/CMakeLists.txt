@@ -40,6 +40,7 @@ set(ROS_DEPS
     ik_solver
     moveit_collision_checker
     ik_solver_core
+    moveit_core
     )
 
 add_executable(test_rrt src/test_rrt.cpp)
