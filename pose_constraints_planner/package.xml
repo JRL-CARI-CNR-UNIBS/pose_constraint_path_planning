@@ -20,7 +20,7 @@
   <depend>ik_solver</depend>
   <depend>ur_ik_solver</depend>
   <depend>ik_solver_core</depend>
-  <build_depend>moveit_core</build_depend>
+  <depend>moveit_core</depend>
 
 
   <test_depend>ament_lint_auto</test_depend>
