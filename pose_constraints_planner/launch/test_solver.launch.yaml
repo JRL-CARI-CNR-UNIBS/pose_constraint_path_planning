@@ -23,6 +23,7 @@ launch:
    param:
        - name: 'param_ns'
          value: '/pose_constraints_planner'
+   launch-prefix: "gnome-terminal --" # launch in another terminal to be able to catch keyboard input
 
 
 - node:
@@ -30,5 +31,3 @@ launch:
     exec: "test_rrt"
     output: "screen"
     #launch-prefix: "gnome-terminal --" # launch in another terminal to be able to catch keyboard input
-
-

@@ -20,4 +20,3 @@ pose_constraints_planner:
       checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin
 
       max_angle_z: 0.3 # angle between z-axis,start and z-axis,rand frames in radians
-

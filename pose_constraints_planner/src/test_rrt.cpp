@@ -34,6 +34,7 @@ public:
     {
       RCLCPP_INFO(this->get_logger(), "Started RobotDescriptionNode...");
         // Subscriber to the "robot_description" topic
+
         subscription_ = this->create_subscription<std_msgs::msg::String>(
             "/robot_description",
               rclcpp::QoS(1).transient_local().reliable(), // this is because the robot description is published only once
@@ -75,6 +76,7 @@ int main(int argc, char **argv)
 
 
   // Add RobotDescriptionNode to the executor
+
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(robot_description_node);
 
@@ -321,6 +323,7 @@ int main(int argc, char **argv)
   {
     return 1;
   }
+
   std::random_device rd;  // Seed source
   std::mt19937 gen(rd()); // Mersenne Twister engine
   std::uniform_real_distribution<> dis(0.0, 1.0);
@@ -356,9 +359,9 @@ int main(int argc, char **argv)
 
     // EXAMPLE check angle between z axis of the rand frame and the z axis of the start frame
     Eigen::Vector3d z_b_start = T_b_start.linear().col(2);
-    Eigen::Vector3d z_b_rand = T_b_rand.linear().col(2);
-    double cos_angle = z_b_start.dot(z_b_rand);
-    if (cos_angle<cos_max_angle_z)
+    Eigen::Vector3d z_b_rand = T_b_rand.linear().col(2);  // linear -> rotation matrix, col(2) -> z axis
+    double cos_angle = z_b_start.dot(z_b_rand); // scalar product between z_b_start and z_b_rand
+    if (cos_angle<cos_max_angle_z)  // skip if the angle is too large
       continue;
 
     // LOG
