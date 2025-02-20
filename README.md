@@ -22,7 +22,6 @@ colcon build
 Navigate to the `src` directory of your workspace and clone the required repositories:
 
 ```bash
-sudo apt install ros-humble-ur
 git clone -b modern_cmake https://github.com/JRL-CARI-CNR-UNIBS/cnr_class_loader.git
 git clone https://github.com/CNR-STIIMA-IRAS/cnr_logger.git
 git clone https://github.com/CNR-STIIMA-IRAS/cnr_param.git
