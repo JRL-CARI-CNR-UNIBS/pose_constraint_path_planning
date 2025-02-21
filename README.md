@@ -1,6 +1,31 @@
 ## Installation
 
-Install the required ROS 2 package:
+### Dependencies
+
+Ensure the following dependencies are installed before proceeding:
+
+#### 1. Log4cxx
+If not already installed, install Log4cxx:
+
+```bash
+sudo apt-get install liblog4cxx-dev
+```
+
+#### 2. POCO C++ Libraries
+Download and install the [POCO C++ Libraries](https://pocoproject.org/index.html).
+
+#### 3. ROS 2 Humble
+Install ROS 2 Humble by following the [official installation guide](https://docs.ros.org/en/humble/Installation.html).
+
+#### 4. MoveIt 2 for ROS 2 Humble
+Install MoveIt 2 using the following command:
+
+```bash
+sudo apt install ros-humble-moveit
+```
+
+#### 5. Required ROS 2 Package
+Install the necessary ROS 2 package:
 
 ```bash
 sudo apt install ros-humble-ur
@@ -62,10 +87,35 @@ Build the workspace with the following command:
 ```bash
 colcon build --symlink-install --cmake-args -DUSE_ROS1=False
 ```
+## Environment Variables
+
+You can set the required environment variables manually in each terminal session or add them to your `.bashrc`.
+
+```bash
+export CNR_PARAM_ROOT_DIRECTORY="/tmp/cnr_param"
+```
+If not present, you need to create a `default_logger.yaml` file with the following content
+
+```yaml
+appenders: ['screen']                             # Mandatory
+                                                  # A vector od dimension 1 or 2, where you can select if the output will be streamed to file, to screen or to both
+                                                  # (the order in the vector is not important)
+
+levels: ['debug']                                   # Optional
+                                                  # A vector where you can select the verbosity level for each appender.
+                                                  # If not present, or if the size of the vector is different from the dimension of the appenders,
+                                                  # the default value is superimposed.
+                                                  # Default: 'debug' for all the appenders
+```
+You need to point to the `default_logger.yaml` file in an environment variable
+
+```bash
+export IK_SOLVER_LOGGER_CONFIG_PATH=~/ros2_ws/install/ik_solver_test/share/ik_solver_test/config/default_logger.yaml
+```
 
 ## Execution
 
-Use the following commands to launch the necessary components (source ros2_ws/install/setup.bash in each terminal before start):
+Use the following commands to launch the necessary components (source ros2_ws/install/setup.bash in each terminal before start, or automatically source it in your `.bashrc` file):
 
 1. **Terminal 1**: Launch the UR robot driver with fake hardware:
    ```bash
