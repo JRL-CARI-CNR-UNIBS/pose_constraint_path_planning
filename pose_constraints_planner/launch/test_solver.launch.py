@@ -31,6 +31,13 @@ def generate_launch_description():
         prefix='gnome-terminal --'
     )
 
+    constraint_visualizer = Node(
+        package='pose_constraints_planner',
+        executable='geometric_constraints_visualizer',
+        output='screen',
+        parameters=[{'constaints_description': os.path.join(pose_constraints_planner_dir, 'config', 'test_solver.yaml')}]
+    )
+
     planner = Node(
         package='pose_constraints_planner',
         executable='test_rrt',
@@ -43,5 +50,6 @@ def generate_launch_description():
         scene_manager_params,
         ik_params,
         scene_manager,
+        constraint_visualizer,
         TimerAction(period=3.0, actions=[planner]),
     ])
