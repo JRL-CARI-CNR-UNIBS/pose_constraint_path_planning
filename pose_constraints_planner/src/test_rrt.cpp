@@ -582,7 +582,7 @@ int main(int argc, char **argv)
     // check line constraint
     Eigen::Vector3d vec_line_to_p = p_b_rand - line_origin; // vector from line origin to point
     Eigen::Vector3d line_dir_normalized = line_direction.normalized();
-    double dist_to_line = vec_line_to_p.cross(line_dir_normalized).norm(); // distance from point to line
+    double dist_to_line = std::abs(vec_line_to_p.cross(line_dir_normalized).norm()); // distance from point to line
     if (dist_to_line>line_max_distance)
     {
       // measure end time of each RRT iteration

@@ -2,11 +2,9 @@
 
 ## TODOs
 
-- automate the execution procedure
 - once a path is found, execute it in rviz
 - time cap to planning?
 - choosing a minimal set of constraints to implement
-- the goal configuration violates the orentation constraint -> check ur_ik_solver matrix format (rotation part)
 
 ## Installation
 
@@ -173,3 +171,9 @@ You can add or remove constraints by editing `test_solver.yaml`
          type: "orientation"
          max_angle: [-1.0,-1.0,0.3]  # [x,y,z] max angle in radians around each axis, -1.0 means no constraints
 ```
+
+## Changes
+
+1. Added orientation, plane and line constraints
+2. Added contraints checking on start and goal nodes
+3. Added performance monitoring

@@ -15,7 +15,6 @@ launch:
 #        name: "use_fake_hardware"
 #        value: "true"
 
-
 - node:
    pkg: "cnr_scene_manager"
    exec: "cnr_scene_manager"
@@ -31,3 +30,10 @@ launch:
     exec: "test_rrt"
     output: "screen"
     #launch-prefix: "gnome-terminal --" # launch in another terminal to be able to catch keyboard input
+
+# # Launch RViz to visualize the scene and the planned path
+# - node:
+#     pkg: "rviz2"
+#     exec: "rviz2"
+#     output: "screen"
+#     args: ["-d", "$(find-pkg-share pose_constraints_planner)/config/rviz_config.rviz"]
