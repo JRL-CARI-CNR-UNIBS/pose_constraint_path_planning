@@ -1,22 +1,56 @@
 pose_constraints_planner:
-  test_solver:
-      group_name: "ur_manipulator"
-      start_configuration: [0.0,-1.5708,1.5708,-1.5708,-1.5708,0.0]
-      goal_configuration:  [1.5708,-1.5708,1.5708,-1.5708,-1.5708,0.0]
-      utopia_tolerance: 0.05
-      extend: false
-      max_distance: 1.0
-      use_kdtree: true
-      checker_resolution: 0.01
-      parallel_checker_n_threads: 4
-      goal_bias: 0.1
+    test_solver:
+        group_name: "ur_manipulator"
+        start_configuration: [0.0,-1.5708,1.5708,-1.5708,-1.5708,0.0]
+        goal_configuration:  [1.5708,-1.5708,1.5708,-1.5708,-1.5708,0.0]
+        utopia_tolerance: 0.05 # tolerance wrt best solution
+        extend: false # if true steps towards next point are truncated at max_distance length
+        max_distance: 1.0 # to be used with extend: true
+        use_kdtree: true 
+        checker_resolution: 0.01
+        parallel_checker_n_threads: 4
+        goal_bias: 0.1 # defines the probability of sampling the goal configuration
 
-      libraries: ["libgraph_core.so","libmoveit_collision_checker.so"]
+        libraries: ["libgraph_core.so","libmoveit_collision_checker.so"]
 
-      # planner: RRT, BiRRT, RRT*, ANYTIMERRT
-      planner_plugin: graph::core::RRTPlugin
-      sampler_plugin: graph::core::InformedSamplerPlugin
-      metrics_plugin: graph::core::EuclideanMetricsPlugin
-      checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin
+        # planner: RRT, BiRRT, RRT*, ANYTIMERRT
+        planner_plugin: graph::core::RRTPlugin
+        sampler_plugin: graph::core::InformedSamplerPlugin
+        metrics_plugin: graph::core::EuclideanMetricsPlugin
+        checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin
 
-      max_angle_z: 0.3 # angle between z-axis,start and z-axis,rand frames in radians
+    # geometric constraints definition
+    geometric_constraints:
+        # Define a plane constraint at y=0.8 with normal along y-axis
+        geometric_constraint_1:
+            type: "plane"
+            origin: [0.0,0.8,0.0]       # point on the plane
+            normal: [0,1,0]             # normal vector of the plane
+        # Define an orientation constraint around z-axis with max angle 0.3 radians
+        geometric_constraint_2:
+            type: "orientation"
+            max_angle: [-1.0,-1.0,0.3]  # [x,y,z] max angle in radians around each axis, -1.0 means no constraints
+        # Define a line constraint along x-axis at y=0.0, z=0.5
+        geometric_constraint_3:
+            type: "line"
+            max_distance: 0.5          # max distance from the line
+            origin: [0.0,0.45,0.95]       # point on the line
+            direction: [1.0,0.0,0.0]   # line direction vector
+
+    # # geometric constraints definition
+    # geometric_constraints:
+    #     # Define a plane constraint at y=0.8 with normal along y-axis
+    #     -   name: "geometric_constraint_1"
+    #         type: "plane"
+    #         origin: [0.0,0.8,0.0]       # point on the plane
+    #         normal: [0,1,0]             # normal vector of the plane
+    #     # Define an orientation constraint around z-axis with max angle 0.3 radians
+    #     -   name: "geometric_constraint_2
+    #         type: "orientation"
+    #         max_angle: [-1.0,-1.0,0.3]  # [x,y,z] max angle in radians around each axis, -1.0 means no constraints
+    #     # Define a line constraint along x-axis at y=0.0, z=0.5
+    #     geometric_constraint_3:
+    #         type: "line"
+    #         max_distance: 0.5          # max distance from the line
+    #         origin: [0.0,0.45,0.95]       # point on the line
+    #         direction: [1.0,0.0,0.0]   # line direction vector

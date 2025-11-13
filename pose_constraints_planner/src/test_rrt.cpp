@@ -5,7 +5,6 @@
 #include <moveit/move_group_interface/move_group_interface.h>
 
 // Graph core libraries
-
 #include <graph_core/solvers/rrt_star.h>
 #include <graph_core/plugins/solvers/tree_solver_plugin.h>
 #include <graph_core/plugins/samplers/sampler_base_plugin.h>
@@ -22,7 +21,6 @@
 
 // IK solver
 #include "ik_solver/internal/ik_solver_node.ros2.hpp"
-
 
 #include <std_msgs/msg/string.hpp>
 
@@ -124,7 +122,9 @@ int main(int argc, char **argv)
   // Get the robot description
   std::string param_ns1 = "/"+package_name;
   std::string param_ns2 = param_ns1+"/test_solver";
+  std::string param_ns3 = param_ns1+"/geometric_constraints";
   std::string group_name;
+
   if(not graph::core::get_param(logger,param_ns2,"group_name",group_name))
   {
     return 1;
@@ -194,14 +194,6 @@ int main(int argc, char **argv)
 
   RCLCPP_INFO_STREAM(node->get_logger(),"LB conf: " <<lb .transpose());
   RCLCPP_INFO_STREAM(node->get_logger(),"UB conf: " <<ub .transpose());
-
-
-  double max_angle_z = 0.3; // rad
-  if(not graph::core::get_param(logger,param_ns2,"max_angle_z",max_angle_z))
-  {
-    return 1;
-  }
-  double cos_max_angle_z = std::cos(max_angle_z);
 
   // Set-up planning tools
   graph::core::GoalCostFunctionPtr goal_cost_fcn = std::make_shared<graph::core::GoalCostFunctionBase>();
@@ -337,39 +329,286 @@ int main(int argc, char **argv)
                                                                   use_kdtree);
 
 
+
+  // Parse geometric constraints parameters
+
+  RCLCPP_INFO(node->get_logger(),"Loading plane constraint...");
+
+  Eigen::Vector3d plane_origin;
+  Eigen::Vector3d plane_normal;
+  std::string geometric_constraint_1_type;
+
+  if(not graph::core::get_param(logger,param_ns3,"geometric_constraint_1/type",geometric_constraint_1_type))
+  {
+    return 1;
+  }
+
+  if(geometric_constraint_1_type!="plane")
+  {
+    RCLCPP_ERROR_STREAM(node->get_logger(),"geometric_constraint_1 type must be 'plane'");
+    return 1;
+  }
+
+  if(not graph::core::get_param(logger,param_ns3,"geometric_constraint_1/origin",plane_origin))
+  {
+    return 1;
+  }
+
+  if(not graph::core::get_param(logger,param_ns3,"geometric_constraint_1/normal",plane_normal))
+  {
+    return 1;
+  }
+
+  RCLCPP_INFO(node->get_logger(),"Loading orientation constraint...");
+
+  Eigen::Vector3d max_angle;
+  Eigen::Vector3d max_angle_cos;
+  std::string geometric_constraint_2_type;
+
+  if(not graph::core::get_param(logger,param_ns3,"geometric_constraint_2/type",geometric_constraint_2_type))
+  {
+    return 1;
+  }
+
+  if(geometric_constraint_2_type!="orientation")
+  {
+    RCLCPP_ERROR_STREAM(node->get_logger(),"geometric_constraint_2 type must be 'orientation'");
+    return 1;
+  }
+
+  if(not graph::core::get_param(logger,param_ns3,"geometric_constraint_2/max_angle",max_angle))
+  {
+    return 1;
+  }
+
+  for (int i=0; i<3; i++)
+  {
+    if (max_angle(i)<0) // no constraint
+      max_angle_cos(i)=-1.1;
+    else
+      max_angle_cos(i)=cos(max_angle(i));
+  }
+
+  RCLCPP_INFO(node->get_logger(),"Loading line constraint...");
+
+  Eigen::Vector3d line_origin;
+  Eigen::Vector3d line_direction;
+  double line_max_distance;
+  std::string geometric_constraint_3_type;
+
+  if(not graph::core::get_param(logger,param_ns3,"geometric_constraint_3/type",geometric_constraint_3_type))
+  {
+    return 1;
+  }
+
+  if(geometric_constraint_3_type!="line")
+  {
+    RCLCPP_ERROR_STREAM(node->get_logger(),"geometric_constraint_3 type must be 'line'");
+    return 1;
+  }
+
+  if(not graph::core::get_param(logger,param_ns3,"geometric_constraint_3/origin",line_origin))
+  {
+    return 1;
+  }
+
+  if(not graph::core::get_param(logger,param_ns3,"geometric_constraint_3/direction",line_direction))
+  {
+    return 1;
+  }
+
+  if(not graph::core::get_param(logger,param_ns3,"geometric_constraint_3/max_distance",line_max_distance))
+  {
+    return 1;
+  }
+
+  RCLCPP_INFO(node->get_logger(),"Constraints laodaed successfully.");
+
+  // Check start and goal configurations against constraints
+  Eigen::Affine3d T_b_goal=ik_solver->getFK(goal_conf);
+
+  // check angle constraints
+  double cos_angle_goal;
+  for (int i=0; i<3; i++)
+  {
+    if (max_angle_cos(i)>-1) // if max_angle_cos < -1 => no constraint
+    {
+      Eigen::Vector3d a_b_start = T_b_start.linear().row(i);
+      Eigen::Vector3d a_b_goal = T_b_goal.linear().row(i);  // linear returns the rotation matrix, col(i) -> axis
+
+      cos_angle_goal = a_b_start.dot(a_b_goal)/(a_b_start.norm()*a_b_goal.norm()); // scalar product between a_b_start and a_b_rand divided by their norms = cos(angle)
+
+      if (cos_angle_goal<max_angle_cos(i))  // skip if the angle is too large
+      {
+        RCLCPP_ERROR(node->get_logger(),"Goal configuration violates orientation constraint.\n Cos(angle_%d) = %f, min allowed = %f",i,cos_angle_goal,max_angle_cos(i));
+        RCLCPP_ERROR_STREAM(node->get_logger(),"Start axis: "<<a_b_start.transpose());
+        RCLCPP_ERROR_STREAM(node->get_logger(),"Goal axis: "<<a_b_goal.transpose());
+        RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+        RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_b_goal.matrix());
+        return 1;
+      }
+    }
+  }
+
+  // check plane constraint for start
+  Eigen::Vector3d p_b_start = T_b_start.translation();
+  Eigen::Vector3d vec_plane_to_p_start = p_b_start - plane_origin;
+  double dist_start_to_plane = vec_plane_to_p_start.dot(plane_normal.normalized()); // distance from point to plane 
+
+  if (std::abs(dist_start_to_plane)<1e-3) // tolerance
+  {
+    RCLCPP_ERROR(node->get_logger(),"Start configuration violates plane constraint. Distance to plane: %f",dist_start_to_plane);
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Goal pint: "<<p_b_start.transpose());
+    return 1;
+  }
+
+  // check plane constraint for goal
+  Eigen::Vector3d p_b_goal = T_b_goal.translation(); // position of the tool in qrand
+  Eigen::Vector3d vec_plane_to_p_goal = p_b_goal - plane_origin;
+  double dist_goal_to_plane = vec_plane_to_p_goal.dot(plane_normal.normalized()); // distance from point to plane
+
+  if (std::abs(dist_goal_to_plane)<1e-3) // tolerance
+  {
+    RCLCPP_ERROR(node->get_logger(),"Goal configuration violates plane constraint. Distance to plane: %f",dist_goal_to_plane);
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Goal pint: "<<p_b_goal.transpose());
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_b_goal.matrix());
+    return 1;
+  }
+
+  // check line constraint for start
+  Eigen::Vector3d vec_line_to_p_start = p_b_start - line_origin;
+  Eigen::Vector3d line_dir_normalized = line_direction.normalized();
+  double dist_start_to_line = std::abs(vec_line_to_p_start.cross(line_dir_normalized).norm()); // distance from point to line
+  RCLCPP_ERROR(node->get_logger(),"Start configuration violates line constraint. Distance to line: %f",dist_start_to_line);
+  RCLCPP_ERROR_STREAM(node->get_logger(),"Start point: "<<p_b_start.transpose());
+  RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+  if (dist_start_to_line>line_max_distance)
+  {
+    return 1;
+  }
+
+  // check line constraint
+  Eigen::Vector3d vec_line_to_p_goal = p_b_goal - line_origin; // vector from line origin to point
+  double dist_goal_to_line = std::abs(vec_line_to_p_goal.cross(line_dir_normalized).norm()); // distance from point to line
+  RCLCPP_ERROR(node->get_logger(),"Goal configuration violates line constraint. Distance to line: %f",dist_goal_to_line);
+  RCLCPP_ERROR_STREAM(node->get_logger(),"Goal point: "<<p_b_goal.transpose());
+  RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+  RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_b_goal.matrix());
+  if (dist_goal_to_line>line_max_distance)
+  {
+    return 1;
+  }
+
+  RCLCPP_INFO(node->get_logger(),"Start and goal configurations satisfy the geometric constraints.");
+
   Eigen::VectorXd qrand;
 
   int cycles=0;
   int nodes=0;
 
-
   /* ----------------------------------------------------------------------------------------------------
    * BEGIN OF THE MAIN LOOP: RRT
    * ----------------------------------------------------------------------------------------------------*/
+
+  using clock = std::chrono::steady_clock;
+  auto start_time_rrt = clock::now();
+  auto start_time_rrt_i = clock::now();
+  auto end_time_rrt_i = clock::now();
+  double max_time_rrt = 0.0;
+  double min_time_rrt = 0.0;
+  double elapsed_rrt_i = 0.0;
+  std::vector<double> rrt_iteration_times;
+
   while (rclcpp::ok())
   {
+    // measure starting time of eachi RRT iteration
+    start_time_rrt_i = clock::now();
+
     double random_value = dis(gen);
     if (random_value<goal_bias)
       qrand=goal_conf;
     else
       qrand=sampler->sample();
 
-
     Eigen::Affine3d T_b_rand=ik_solver->getFK(qrand); // transformation from base to tool in qrand;
 
-    // EXAMPLE check angle between z axis of the rand frame and the z axis of the start frame
-    Eigen::Vector3d z_b_start = T_b_start.linear().col(2);
-    Eigen::Vector3d z_b_rand = T_b_rand.linear().col(2);  // linear -> rotation matrix, col(2) -> z axis
-    double cos_angle = z_b_start.dot(z_b_rand); // scalar product between z_b_start and z_b_rand
-    if (cos_angle<cos_max_angle_z)  // skip if the angle is too large
-      continue;
-
-    // LOG
-    if (cycles++>1000)
+    // check angle constraints
+    bool feasible=true;
+    double cos_angle_i;
+    for (int i=0; i<3; i++)
     {
+      if (max_angle_cos(i)>-1) // if max_angle_cos < -1 => no constraint
+      {
+        Eigen::Vector3d a_b_start = T_b_start.linear().row(i);
+        Eigen::Vector3d a_b_rand = T_b_rand.linear().row(i);  // linear returns the rotation matrix, col(i) -> axis
+        cos_angle_i = a_b_start.dot(a_b_rand)/(a_b_start.norm()*a_b_rand.norm()); // scalar product between a_b_start and a_b_rand divided by their norms = cos(angle)
+
+        if (cos_angle_i<max_angle_cos(i))  // skip if the angle is too large
+        {
+          feasible=false;
+          break;
+        }
+      }
+    }
+
+    if (not feasible)
+    {
+      // measure end time of each RRT iteration
+      end_time_rrt_i = clock::now();
+      elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+      rrt_iteration_times.push_back(elapsed_rrt_i);
+      max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+      min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
+      continue; // skip if the angle is too large
+    }
+
+    // check plane constraint
+    Eigen::Vector3d p_b_rand = T_b_rand.translation(); // position of the tool in qrand
+    Eigen::Vector3d vec_plane_to_p = p_b_rand - plane_origin;
+    double dist_to_plane = vec_plane_to_p.dot(plane_normal.normalized()); // distance from point to plane
+
+    if (std::abs(dist_to_plane)<1e-3) // tolerance
+    {
+      // measure end time of each RRT iteration
+      end_time_rrt_i = clock::now();
+      elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+      rrt_iteration_times.push_back(elapsed_rrt_i);
+      max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+      min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
+      continue; // skip if point is too close to the plane
+    }
+
+    // check line constraint
+    Eigen::Vector3d vec_line_to_p = p_b_rand - line_origin; // vector from line origin to point
+    Eigen::Vector3d line_dir_normalized = line_direction.normalized();
+    double dist_to_line = vec_line_to_p.cross(line_dir_normalized).norm(); // distance from point to line
+    if (dist_to_line>line_max_distance)
+    {
+      // measure end time of each RRT iteration
+      end_time_rrt_i = clock::now();
+      elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+      rrt_iteration_times.push_back(elapsed_rrt_i);
+      max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+      min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
+      continue; // skip if point is too far from the line
+    }
+
+    // LOG every 1000 iterations of feasible points
+    if (cycles++>200)
+    {
+      RCLCPP_INFO_STREAM(node->get_logger(),"dist_to_plane: "<<dist_to_plane);
+      RCLCPP_INFO_STREAM(node->get_logger(),"cos_angle_i: "<<cos_angle_i);
+      RCLCPP_INFO_STREAM(node->get_logger(),"T_b_rand:\n"<<T_b_rand.matrix());
+      RCLCPP_INFO_STREAM(node->get_logger(),"p_b_rand: "<<p_b_rand.transpose());
+      RCLCPP_INFO_STREAM(node->get_logger(),"dist_to_line: "<<dist_to_line);
+      RCLCPP_INFO_STREAM(node->get_logger(),"vec_line_to_p: "<<vec_line_to_p.transpose());
+      RCLCPP_INFO_STREAM(node->get_logger(),"line_dir_normalized: "<<line_dir_normalized.transpose());
       RCLCPP_DEBUG(node->get_logger(),"Added %d nodes",nodes);
+      RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
       cycles=0;
     }
+
     if (tree->extend(qrand, new_node))
     {
       nodes++;
@@ -389,9 +628,27 @@ int main(int argc, char **argv)
         }
       }
     }
+    // measure end time of each RRT iteration
+    end_time_rrt_i = clock::now();
+    elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+    rrt_iteration_times.push_back(elapsed_rrt_i);
+    max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+    min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
   }
 
+  // measure end time of last RRT iteration
+  end_time_rrt_i = clock::now();
+  elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+  rrt_iteration_times.push_back(elapsed_rrt_i);
+  max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+  min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
 
+  // measure end time of RRT
+  auto end_time_rrt = clock::now();
+  double elapsed_rrt = std::chrono::duration<double, std::milli>(end_time_rrt - start_time_rrt).count();
+  RCLCPP_INFO_STREAM(node->get_logger(),"RRT found a solution in "<<elapsed_rrt<<" ms");
+  RCLCPP_INFO_STREAM(node->get_logger(),"RRT iteration times over "<<rrt_iteration_times.size()<<" iterations: min "<<min_time_rrt<<" ms, max "<<max_time_rrt<<" ms"<<", mean "<<(std::accumulate(rrt_iteration_times.begin(), rrt_iteration_times.end(), 0.0) / rrt_iteration_times.size())<<" ms");
+  
   RCLCPP_INFO(node->get_logger(),"Press Ctrl+C to kill the test");
   while(rclcpp::ok())
     rclcpp::sleep_for(std::chrono::seconds(1));

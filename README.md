@@ -1,3 +1,13 @@
+# Pose constrained path planning
+
+## TODOs
+
+- automate the execution procedure
+- once a path is found, execute it in rviz
+- time cap to planning?
+- choosing a minimal set of constraints to implement
+- the goal configuration violates the orentation constraint -> check ur_ik_solver matrix format (rotation part)
+
 ## Installation
 
 ### Dependencies
@@ -5,6 +15,7 @@
 Ensure the following dependencies are installed before proceeding:
 
 #### 1. Log4cxx
+
 If not already installed, install Log4cxx:
 
 ```bash
@@ -12,12 +23,15 @@ sudo apt-get install liblog4cxx-dev
 ```
 
 #### 2. POCO C++ Libraries
+
 Download and install the [POCO C++ Libraries](https://pocoproject.org/index.html).
 
 #### 3. ROS 2 Humble
+
 Install ROS 2 Humble by following the [official installation guide](https://docs.ros.org/en/humble/Installation.html).
 
 #### 4. MoveIt 2 for ROS 2 Humble
+
 Install MoveIt 2 using the following command:
 
 ```bash
@@ -25,6 +39,7 @@ sudo apt install ros-humble-moveit
 ```
 
 #### 5. Required ROS 2 Package
+
 Install the necessary ROS 2 package:
 
 ```bash
@@ -76,6 +91,7 @@ echo "build:
 ```
 
 if colcon uses all the RAM, call ulimit in the shell before compiling, to limit the usage (for example to 4GB):
+
 ```bash
 ulimit -v 4000000
 ```
@@ -87,6 +103,7 @@ Build the workspace with the following command:
 ```bash
 colcon build --symlink-install --cmake-args -DUSE_ROS1=False
 ```
+
 ## Environment Variables
 
 You can set the required environment variables manually in each terminal session or add them to your `.bashrc`.
@@ -94,6 +111,7 @@ You can set the required environment variables manually in each terminal session
 ```bash
 export CNR_PARAM_ROOT_DIRECTORY="/tmp/cnr_param"
 ```
+
 If not present, you need to create a `default_logger.yaml` file with the following content
 
 ```yaml
@@ -107,6 +125,7 @@ levels: ['debug']                                   # Optional
                                                   # the default value is superimposed.
                                                   # Default: 'debug' for all the appenders
 ```
+
 You need to point to the `default_logger.yaml` file in an environment variable
 
 ```bash
@@ -118,11 +137,13 @@ export IK_SOLVER_LOGGER_CONFIG_PATH=~/ros2_ws/install/ik_solver_test/share/ik_so
 Use the following commands to launch the necessary components (source ros2_ws/install/setup.bash in each terminal before start, or automatically source it in your `.bashrc` file):
 
 1. **Terminal 1**: Launch the UR robot driver with fake hardware:
+
    ```bash
    ros2 launch ur_robot_driver ur10e.launch.py use_fake_hardware:=true robot_ip:=127.0.0.1 activate_joint_controller:=true
    ```
 
 2. **Terminal 2**: Launch MoveIt configuration for the UR robot:
+
    ```bash
    ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur10e use_fake_hardware:=true launch_rviz:=true
    ```
@@ -130,6 +151,25 @@ Use the following commands to launch the necessary components (source ros2_ws/in
    here you can add a Marker (add-> marker) with topic /marker_visualization_topic to see the path.
 
 3. **Terminal 3**: Launch the pose constraints planner:
+
    ```bash
    ros2 launch pose_constraints_planner test_solver.launch.yaml
    ```
+
+## Usage
+
+You can add or remove constraints by editing `test_solver.yaml`
+
+```yaml
+   # geometric constraints definition
+   geometric_constraints:
+      # Define a plane constraint at y=0.8 with normal along y-axis
+      geometric_constraint_1:
+         type: "plane"
+         origin: [0.0,0.8,0.0]       # point on the plane
+         normal: [0,1,0]             # normal vector of the plane
+      # Define an orientation constraint around z-axis with max angle 0.3 radians
+      geometric_constraint_2:
+         type: "orientation"
+         max_angle: [-1.0,-1.0,0.3]  # [x,y,z] max angle in radians around each axis, -1.0 means no constraints
+```
