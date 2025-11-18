@@ -19,6 +19,7 @@ find_package(graph_core REQUIRED)
 find_package(graph_display REQUIRED)
 find_package(ik_solver REQUIRED)
 find_package(ur_ik_solver REQUIRED)
+find_package(rclpy REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -73,5 +74,10 @@ install(TARGETS
 
 install(DIRECTORY launch config
     DESTINATION share/${PROJECT_NAME})
+
+install(PROGRAMS
+    src/pose_constraints_planner/geometric_constraints_visualizer.py
+    DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_package()

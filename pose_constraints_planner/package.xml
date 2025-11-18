@@ -21,6 +21,7 @@
   <depend>ur_ik_solver</depend>
   <depend>ik_solver_core</depend>
   <depend>moveit_core</depend>
+  <depend>rclpy</depend>
 
 
   <test_depend>ament_lint_auto</test_depend>

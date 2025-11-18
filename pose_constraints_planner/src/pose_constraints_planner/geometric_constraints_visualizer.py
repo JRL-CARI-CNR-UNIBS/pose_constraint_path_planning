@@ -55,7 +55,7 @@ def quaternion_from_matrix(T):
     return q_msg
 
 class GeometricConstraintVisualizer(Node):
-    def __init__(self, yaml_file_path):
+    def __init__(self):
         super().__init__('geometric_constraint_visualizer')
         self.publisher_ = self.create_publisher(MarkerArray, 'geometric_constraints_markers', 10)
 
@@ -70,7 +70,7 @@ class GeometricConstraintVisualizer(Node):
             return
         
         # Load YAML
-        with open(yaml_file_path, 'r') as f:
+        with open(yaml_path, 'r') as f:
             self.constraints_yaml = yaml.safe_load(f)
 
         # Publish markers
@@ -153,13 +153,10 @@ class GeometricConstraintVisualizer(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    yaml_path = '/path/to/your/constraints.yaml'  # <-- set your path here
-    node = GeometricConstraintVisualizer(yaml_path)
+    node = GeometricConstraintVisualizer()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
-
-
 
 
 if __name__ == '__main__':
