@@ -6,6 +6,7 @@ Panels:
       Expanded:
         - /Global Options1
         - /Marker1
+        - /MarkerArray1
       Splitter Ratio: 0.4957627058029175
     Tree Height: 249
   - Class: rviz_common/Selection
@@ -246,7 +247,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        graph_display: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -254,6 +255,18 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /marker_visualization_topic
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: geometric_constraints_markers
       Value: true
   Enabled: true
   Global Options:
@@ -301,7 +314,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 6.619869709014893
+      Distance: 6.337989807128906
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -316,10 +329,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.35479772090911865
+      Pitch: 0.4297976493835449
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 6.183587551116943
+      Yaw: 0.13540677726268768
     Saved: ~
 Window Geometry:
   Displays:

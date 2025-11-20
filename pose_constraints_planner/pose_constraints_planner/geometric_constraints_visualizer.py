@@ -79,9 +79,14 @@ class GeometricConstraintVisualizer(Node):
     def publish_markers(self):
         marker_array = MarkerArray()
         count = 0
-        constraints = self.constraints_yaml.get('geometric_constraints', [])
+        
+        constraints = self.constraints_yaml.get('pose_constraints_planner',[]).get('geometric_constraints',[])
+
+        self.get_logger().info(f"Found {len(constraints)} geometric constraints to visualize.")
 
         for c in constraints:
+
+            self.get_logger().info(f"Processing constraint: {c}")
             name = c.get('name', f'constraint_{count}')
             ctype = c.get('type')
             marker = Marker()
@@ -131,7 +136,7 @@ class GeometricConstraintVisualizer(Node):
                 marker.pose.position.y = c['origin'][1]
                 marker.pose.position.z = c['origin'][2]
                 marker.pose.orientation = quaternion_from_matrix(
-                    homogeneous_matrix(c['origin'], c['normal'])
+                    homogeneous_matrix(c['origin'], c['direction'])
                 )
                 marker.scale.x = c['max_distance']  # diameter
                 marker.scale.y = c['max_distance']  # diameter
@@ -153,9 +158,16 @@ class GeometricConstraintVisualizer(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+
+    print("Starting Geometric Constraint Visualizer Node")
     node = GeometricConstraintVisualizer()
+    #rclpy.spin(node)
+
+    print("Publishing markers...")
+    node.publish_markers()
     rclpy.spin(node)
     node.destroy_node()
+    print("Shutting down Geometric Constraint Visualizer Node")
     rclpy.shutdown()
 
 

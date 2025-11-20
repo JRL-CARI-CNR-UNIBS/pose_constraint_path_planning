@@ -136,9 +136,9 @@ bool check_line_constraint(const Eigen::Affine3d& T,
 
   if (distance < max_distance)
   {
-    return false;
+    return true;
   }
-  return true;
+  return false;
 }
 
 struct GeometricConstraint
@@ -549,7 +549,7 @@ int main(int argc, char **argv)
     case GeometricConstraint::PLANE:
       // check plane constraint for start
       double dist_start_to_plane;
-      if (check_plane_constraint(T_b_start,gc.plane_origin,gc.plane_normal,tolerance,dist_start_to_plane)) // tolerance
+      if (!check_plane_constraint(T_b_start,gc.plane_origin,gc.plane_normal,tolerance,dist_start_to_plane)) // tolerance
       {
         RCLCPP_ERROR(node->get_logger(),"Start configuration violates plane constraint. Distance to plane: %f",dist_start_to_plane);
         RCLCPP_ERROR_STREAM(node->get_logger(),"Goal point: "<<T_b_start.translation().transpose());
@@ -557,7 +557,7 @@ int main(int argc, char **argv)
       }
       // check plane constraint for goal
       double dist_goal_to_plane; // distance from point to plane
-      if (check_plane_constraint(T_b_goal,gc.plane_origin,gc.plane_normal,tolerance,dist_goal_to_plane)) // tolerance
+      if (!check_plane_constraint(T_b_goal,gc.plane_origin,gc.plane_normal,tolerance,dist_goal_to_plane)) // tolerance
       {
         RCLCPP_ERROR(node->get_logger(),"Goal configuration violates plane constraint. Distance to plane: %f",dist_goal_to_plane);
         RCLCPP_ERROR_STREAM(node->get_logger(),"Goal pint: "<<T_b_goal.translation().transpose());
@@ -646,7 +646,7 @@ int main(int argc, char **argv)
 
         case GeometricConstraint::PLANE:
           // check plane constraint
-          if (check_plane_constraint(T_b_rand,gc.plane_origin,gc.plane_normal,tolerance,dist_to_plane))
+          if (!check_plane_constraint(T_b_rand,gc.plane_origin,gc.plane_normal,tolerance,dist_to_plane))
           {
             // measure end time of each RRT iteration
             end_time_rrt_i = clock::now();
@@ -727,6 +727,8 @@ int main(int argc, char **argv)
   RCLCPP_INFO(node->get_logger(),"killing....");
 
   rclcpp::shutdown();
+
+  //solution.getWaypoints();
 
   return 0;
 }
