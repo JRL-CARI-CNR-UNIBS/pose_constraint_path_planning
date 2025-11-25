@@ -132,6 +132,8 @@ export IK_SOLVER_LOGGER_CONFIG_PATH=~/ros2_ws/install/ik_solver_test/share/ik_so
 
 ## Execution
 
+### Manual procedure
+
 Use the following commands to launch the necessary components (source ros2_ws/install/setup.bash in each terminal before start, or automatically source it in your `.bashrc` file):
 
 1. **Terminal 1**: Launch the UR robot driver with fake hardware:
@@ -154,22 +156,48 @@ Use the following commands to launch the necessary components (source ros2_ws/in
    ros2 launch pose_constraints_planner test_solver.launch.yaml
    ```
 
+This procedure is better to have a more clear control over the nodes.
+
+### Automatic procedure
+
+Use the following commands to launch the test:
+
+1. **Terminal 1**: Launch the UR robot driver and MoveIt configuration:
+
+   ```bash
+   ros2 launch pose_constraints_planner init_test_solver.launch.py
+   ```
+
+2. **Terminal 1**: Launch the pose constraints planner:
+
+   ```bash
+   ros2 launch pose_constraints_planner test_solver.launch.py
+   ```
+
+Make sure `rviz_config.rviz` is present in the `config` directory.
+
 ## Usage
 
 You can add or remove constraints by editing `test_solver.yaml`
 
 ```yaml
    # geometric constraints definition
-   geometric_constraints:
-      # Define a plane constraint at y=0.8 with normal along y-axis
-      geometric_constraint_1:
-         type: "plane"
-         origin: [0.0,0.8,0.0]       # point on the plane
-         normal: [0,1,0]             # normal vector of the plane
-      # Define an orientation constraint around z-axis with max angle 0.3 radians
-      geometric_constraint_2:
-         type: "orientation"
-         max_angle: [-1.0,-1.0,0.3]  # [x,y,z] max angle in radians around each axis, -1.0 means no constraints
+    geometric_constraints:
+        # Define a plane constraint at y=0.8 with normal along y-axis
+        -   name: "geometric_constraint_1"
+            type: "plane"
+            origin: [0.0,0.8,0.0]       # point on the plane
+            normal: [0,1,0]             # normal vector of the plane
+        # Define an orientation constraint around z-axis with max angle 0.3 radians
+        -   name: "geometric_constraint_2"
+            type: "orientation"
+            max_angle: [-1.0,-1.0,0.3]  # [x,y,z] max angle in radians around each axis, -1.0 means no constraints
+        # Define a line constraint along x-axis at y=0.0, z=0.5
+        -   name: "geometric_constraint_3"
+            type: "line"
+            max_distance: 0.5          # max distance from the line
+            origin: [0.0,0.45,0.95]    # point on the line
+            direction: [1.0,0.0,0.0]   # line direction vector
 ```
 
 ## Changes
@@ -177,3 +205,6 @@ You can add or remove constraints by editing `test_solver.yaml`
 1. Added orientation, plane and line constraints
 2. Added contraints checking on start and goal nodes
 3. Added performance monitoring
+4. Added constraint visualization
+5. Automated constraints parsing
+6. Rewrote launch files in Python

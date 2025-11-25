@@ -138,8 +138,8 @@ class GeometricConstraintVisualizer(Node):
                 marker.pose.orientation = quaternion_from_matrix(
                     homogeneous_matrix(c['origin'], c['direction'])
                 )
-                marker.scale.x = c['max_distance']  # diameter
-                marker.scale.y = c['max_distance']  # diameter
+                marker.scale.x = c['max_distance']*2  # diameter
+                marker.scale.y = c['max_distance']*2  # diameter
                 marker.scale.z = 5.0  
                 marker.color.r = 0.0
                 marker.color.g = 1.0

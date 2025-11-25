@@ -22,6 +22,7 @@ find_package(ur_ik_solver REQUIRED)
 
 find_package(ament_cmake_python REQUIRED)
 
+find_package(control_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -65,7 +66,7 @@ ur_ik_solver::ur_ik_solver
 #urdf::urdfdom
 )
 
-ament_target_dependencies(test_rrt ${ROS_DEPS})
+ament_target_dependencies(test_rrt control_msgs ${ROS_DEPS})
 
 #ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(${DEPS_LIB} ${ROS_DEPS})

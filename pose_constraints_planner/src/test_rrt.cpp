@@ -24,6 +24,12 @@
 
 #include <std_msgs/msg/string.hpp>
 
+// Action server libraries
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
+#include <control_msgs/action/follow_joint_trajectory.hpp>
+#include "rclcpp_components/register_node_macro.hpp"
+
 // class to read the robot description from topic
 class RobotDescriptionNode : public rclcpp::Node
 {
@@ -60,6 +66,105 @@ private:
     }
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
     std::string robot_description_ = ""; // Variable to store the robot description
+};
+
+// Action client class
+class TestRRTActionClient : public rclcpp::Node
+{
+  public:
+    explicit TestRRTActionClient(const rclcpp::NodeOptions & options)
+    : Node("test_rrt_action_client", options)
+    {
+      // Instantiate action client
+      this->_client_ptr = rclcpp_action::create_client<control_msgs::action::FollowJointTrajectory>(
+        this,
+        "/joint_trajectory_controller/follow_joint_trajectory");
+    }
+
+    void set_trajectory(const std::vector<Eigen::VectorXd> & trajectory)
+    {
+      this->_trajectory = trajectory;
+    }
+
+    bool is_goal_done() const
+    {
+      return goal_done_.load();
+    }
+
+    void send_goal()
+    {
+      if (!this->_client_ptr->wait_for_action_server(std::chrono::seconds(10))) {
+        RCLCPP_ERROR(this->get_logger(), "Action server not available, waiting...");
+        return;
+      }
+
+      RCLCPP_INFO(this->get_logger(), "Action server available, sending goal...");
+
+      // Create a goal message
+      auto goal_msg = control_msgs::action::FollowJointTrajectory::Goal();
+
+      // Fill in the goal message as needed
+      goal_msg.trajectory.joint_names = {"shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"};
+      trajectory_msgs::msg::JointTrajectoryPoint point;
+      rclcpp::Duration time_from_start = rclcpp::Duration::from_seconds(0.0);
+
+      goal_msg.trajectory.points.clear();
+      
+      for(const auto& waypoint : this->_trajectory)
+      {
+        point.positions.assign(waypoint.begin(), waypoint.end());
+        point.time_from_start = time_from_start;
+        goal_msg.trajectory.points.push_back(point);
+        time_from_start = time_from_start + rclcpp::Duration::from_seconds(1.0); // increment time for next point
+      }
+
+      // Send the goal
+      auto send_goal_options = rclcpp_action::Client<control_msgs::action::FollowJointTrajectory>::SendGoalOptions();
+      send_goal_options.goal_response_callback =
+        std::bind(&TestRRTActionClient::goal_response_callback, this, std::placeholders::_1);
+      send_goal_options.result_callback =
+        std::bind(&TestRRTActionClient::result_callback, this, std::placeholders::_1);
+
+      this->_client_ptr->async_send_goal(goal_msg, send_goal_options);
+    }
+
+  private:
+    rclcpp_action::Client<control_msgs::action::FollowJointTrajectory>::SharedPtr _client_ptr;
+    rclcpp::TimerBase::SharedPtr _timer;
+    std::vector<Eigen::VectorXd> _trajectory;
+    std::atomic<bool> goal_done_{false};
+
+    void goal_response_callback(
+      rclcpp_action::ClientGoalHandle<control_msgs::action::FollowJointTrajectory>::SharedPtr goal_handle)
+    {
+      if (!goal_handle) {
+        RCLCPP_ERROR(this->get_logger(), "Goal was rejected by server");
+        this->goal_done_.store(true);
+      } else {
+        RCLCPP_INFO(this->get_logger(), "Goal accepted by server, waiting for result");
+      }
+    }
+
+    void result_callback(
+      const rclcpp_action::ClientGoalHandle<control_msgs::action::FollowJointTrajectory>::WrappedResult & result)
+    {
+      switch (result.code) {
+        case rclcpp_action::ResultCode::SUCCEEDED:
+          RCLCPP_INFO(this->get_logger(), "Goal succeeded!");
+          break;
+        case rclcpp_action::ResultCode::ABORTED:
+          RCLCPP_ERROR(this->get_logger(), "Goal was aborted");
+          return;
+        case rclcpp_action::ResultCode::CANCELED:
+          RCLCPP_ERROR(this->get_logger(), "Goal was canceled");
+          return;
+        default:
+          RCLCPP_ERROR(this->get_logger(), "Unknown result code");
+          return;
+        }
+        this->goal_done_.store(true);
+    }
+  
 };
 
 /// @brief Checks if the angle between the corresponding axes of two transformations exceeds the maximum allowed angles.
@@ -720,6 +825,53 @@ int main(int argc, char **argv)
   RCLCPP_INFO_STREAM(node->get_logger(),"RRT found a solution in "<<elapsed_rrt<<" ms");
   RCLCPP_INFO_STREAM(node->get_logger(),"RRT iteration times over "<<rrt_iteration_times.size()<<" iterations: min "<<min_time_rrt<<" ms, max "<<max_time_rrt<<" ms"<<", mean "<<(std::accumulate(rrt_iteration_times.begin(), rrt_iteration_times.end(), 0.0) / rrt_iteration_times.size())<<" ms");
   
+  // simulate the trajectory execution using an action client
+  // first, get the current joint states
+  auto joint_state_msg = std::make_shared<sensor_msgs::msg::JointState>();
+  auto joint_state_node = rclcpp::Node::make_shared("joint_state_subscriber");
+  joint_state_node->create_subscription<sensor_msgs::msg::JointState>(
+    "/joint_states",
+    rclcpp::SensorDataQoS(),
+    [&joint_state_msg](const sensor_msgs::msg::JointState::SharedPtr msg)
+    {
+      joint_state_msg = msg;
+    }
+  );
+  executor.add_node(joint_state_node);
+  RCLCPP_INFO(node->get_logger(),"Waiting for joint_states...");
+  while (rclcpp::ok() && joint_state_msg->position.empty())
+  {
+    executor.spin_some();
+    rclcpp::sleep_for(std::chrono::milliseconds(100));
+  }
+  RCLCPP_INFO(node->get_logger(),"joint_states received.");
+
+  // prepare the waypoints
+  Eigen::VectorXd start_wp(joint_state_msg->position.size());
+  for (size_t i = 0; i < joint_state_msg->position.size(); ++i)
+  {
+    start_wp(i) = joint_state_msg->position[i];
+  }
+
+  std::vector<Eigen::VectorXd> waypoints;
+  waypoints.reserve(solution->getWaypoints().size()+1);
+  waypoints.push_back(start_wp);
+  waypoints.insert(waypoints.end(),
+                   solution->getWaypoints().begin(),
+                   solution->getWaypoints().end());
+
+  // create the action client node
+  auto action_client_node = std::make_shared<TestRRTActionClient>(options);
+  executor.add_node(action_client_node);
+
+  action_client_node->set_trajectory(waypoints);
+  action_client_node->send_goal();
+
+  while (rclcpp::ok() && !action_client_node->is_goal_done()) {
+    executor.spin_some();
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
   RCLCPP_INFO(node->get_logger(),"Press Ctrl+C to kill the test");
   while(rclcpp::ok())
     rclcpp::sleep_for(std::chrono::seconds(1));
@@ -727,8 +879,6 @@ int main(int argc, char **argv)
   RCLCPP_INFO(node->get_logger(),"killing....");
 
   rclcpp::shutdown();
-
-  //solution.getWaypoints();
 
   return 0;
 }
