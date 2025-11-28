@@ -78,7 +78,7 @@ class TestRRTActionClient : public rclcpp::Node
       // Instantiate action client
       this->_client_ptr = rclcpp_action::create_client<control_msgs::action::FollowJointTrajectory>(
         this,
-        "/joint_trajectory_controller/follow_joint_trajectory");
+        "/scaled_joint_trajectory_controller/follow_joint_trajectory");
     }
 
     void set_trajectory(const std::vector<Eigen::VectorXd> & trajectory)
@@ -268,6 +268,80 @@ struct GeometricConstraint
   Eigen::Vector3d max_angle_cos;
 };
 
+bool permutationName(  const std::vector<std::string>& order_names,
+                       std::vector<std::string>& names,
+                       std::vector<double>& position,
+                       std::vector<double>& velocity,
+                       std::vector<double>& effort,
+                       std::stringstream* report)
+{
+  if (names.size()<order_names.size())
+  {
+    if(report)
+      *report << "The vector of names to be sorted has size " << names.size()
+                  << " that is smaller than vector of the sorted names (" << order_names.size() <<")";
+    return false;
+  }
+  if (names.size()!=position.size())
+  {
+    if(report)
+      *report << "Input Mismatch. The vector of names to be sorted has size " << names.size()
+                 << " while position size is " << position.size();
+    return false;
+  }
+  if (names.size()!=velocity.size())
+  {
+    if(report)
+      *report << "Input Mismatch. The vector of names to be sorted has size " << names.size()
+                << " while velocity size is " << velocity.size();
+    return false;
+  }
+  if (names.size()!=effort.size())
+  {
+    if(report)
+      *report << "Input Mismatch. The vector of names to be sorted has size " << names.size()
+                << " while effort size is " << effort.size();
+    return false;
+  }
+
+
+
+  for (unsigned int iOrder=0;iOrder<order_names.size();iOrder++)
+  {
+    if (names.at(iOrder).compare(order_names.at(iOrder)))
+    {
+      for (unsigned int iNames=iOrder+1;iNames<names.size();iNames++)
+      {
+        if (!order_names.at(iOrder).compare(names.at(iNames)))
+        {
+          std::iter_swap(names.begin()+iOrder,    names.begin()+iNames);
+          std::iter_swap(position.begin()+iOrder, position.begin()+iNames);
+          std::iter_swap(velocity.begin()+iOrder, velocity.begin()+iNames);
+          std::iter_swap(effort.begin()+iOrder,   effort.begin()+iNames);
+          break;
+        }
+        if (iNames==(names.size()-1))
+        {
+          if(*report)
+          {
+            *report << "The Joint '" << order_names.at(iOrder) <<"' that is in the vector of the sorted names,"
+                    << "is missing in the vector to be sorted.";
+            *report << "Sorted Names: <";
+            for( size_t i=0;i<order_names.size();i++)
+                *report << order_names.at(i) <<",";
+            *report << "> vs Names to be ordered: <";
+            for( size_t i=0;i<names.size();i++)
+              *report << names.at(i) <<",";
+            *report <<">";
+          }
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
 int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
@@ -281,7 +355,7 @@ int main(int argc, char **argv)
 
   // Add RobotDescriptionNode to the executor
 
-  rclcpp::executors::MultiThreadedExecutor executor;
+  rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(),10);
   executor.add_node(robot_description_node);
 
   RCLCPP_INFO(robot_description_node->get_logger(), "Waiting for robot_description to be received...");
@@ -699,6 +773,7 @@ int main(int argc, char **argv)
   double elapsed_rrt_i = 0.0;
   std::vector<double> rrt_iteration_times;
 
+  double rejction_waster_time = 0.0;
   while (rclcpp::ok())
   {
     // measure starting time of eachi RRT iteration
@@ -711,6 +786,9 @@ int main(int argc, char **argv)
     }
     else
     {
+      // set start iteration time
+      auto iteration_time = clock::now();
+
       qrand=sampler->sample();
 
       Eigen::Affine3d T_b_rand=ik_solver->getFK(qrand); // transformation from base to tool in qrand;
@@ -731,6 +809,11 @@ int main(int argc, char **argv)
             rrt_iteration_times.push_back(elapsed_rrt_i);
             max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
             min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
+
+            // compute iteration duration
+            auto iteration_duration = clock::now() - iteration_time;
+            rejction_waster_time += std::chrono::duration<double, std::milli>(iteration_duration).count();
+
             continue; // skip if point is too far from the line
           }
           break;
@@ -771,7 +854,7 @@ int main(int argc, char **argv)
       }
 
       // LOG every 1000 iterations of feasible points
-      if (cycles++>200)
+      if (cycles++>1000)
       {
         RCLCPP_INFO_STREAM(node->get_logger(),"dist_to_plane: "<<dist_to_plane);
         RCLCPP_INFO_STREAM(node->get_logger(),"cos_angle_i: "<<angle_cos);
@@ -784,9 +867,66 @@ int main(int argc, char **argv)
         cycles=0;
       }
     }
-
+    double dist_to_plane;
     if (tree->extend(qrand, new_node))
     {
+      auto new_conf = new_node->getConfiguration();
+      RCLCPP_DEBUG_STREAM(node->get_logger(),"New node added: "<<new_conf.transpose());
+      if(!check_plane_constraint(ik_solver->getFK(new_conf),
+                                geometric_constraints[0].plane_origin,
+                                geometric_constraints[0].plane_normal,
+                                tolerance,
+                                dist_to_plane))
+      {
+        RCLCPP_ERROR(node->get_logger(),"New configuration violates plane constraint. Distance to plane: %f",dist_to_plane);
+        RCLCPP_ERROR_STREAM(node->get_logger(),"New point: "<<ik_solver->getFK(new_conf).translation().transpose());
+        RCLCPP_ERROR(node->get_logger(),"Total nodes %d",nodes);
+        tree->removeNode(new_node);
+        // measure end time of each RRT iteration
+        end_time_rrt_i = clock::now();
+        elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+        rrt_iteration_times.push_back(elapsed_rrt_i);
+        max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+        min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
+        continue;
+      }
+      double dist_to_line;
+      if(!check_line_constraint(ik_solver->getFK(new_conf),
+                               geometric_constraints[2].line_origin,
+                               geometric_constraints[2].line_dir,
+                               geometric_constraints[2].line_max_distance,
+                               dist_to_line))
+      {
+        RCLCPP_ERROR(node->get_logger(),"New configuration violates line constraint. Distance to line: %f, maximum allowed value: %f",dist_to_line, geometric_constraints[2].line_max_distance);
+        RCLCPP_ERROR_STREAM(node->get_logger(),"New point: "<<ik_solver->getFK(new_conf).translation().transpose());
+        RCLCPP_ERROR(node->get_logger(),"Total nodes %d",nodes);
+        tree->removeNode(new_node);
+        // measure end time of each RRT iteration
+        end_time_rrt_i = clock::now();
+        elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+        rrt_iteration_times.push_back(elapsed_rrt_i);
+        max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+        min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
+        continue;
+      }
+      double angle_cos;
+      if(!check_angle_constraint(ik_solver->getFK(start_conf),
+                                 ik_solver->getFK(new_conf),
+                                 geometric_constraints[1].max_angle_cos,
+                                 angle_cos))
+      {
+        RCLCPP_ERROR(node->get_logger(),"New configuration violates orientation constraint.");
+        RCLCPP_ERROR_STREAM(node->get_logger(),"New matrix:\n"<<ik_solver->getFK(new_conf).matrix());
+        RCLCPP_ERROR(node->get_logger(),"Total nodes %d",nodes);
+        tree->removeNode(new_node);
+        // measure end time of each RRT iteration
+        end_time_rrt_i = clock::now();
+        elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+        rrt_iteration_times.push_back(elapsed_rrt_i);
+        max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+        min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
+        continue;
+      }
       nodes++;
       if ((new_node->getConfiguration()-goal_conf).norm()<max_distance)
       {
@@ -829,15 +969,23 @@ int main(int argc, char **argv)
   // first, get the current joint states
   auto joint_state_msg = std::make_shared<sensor_msgs::msg::JointState>();
   auto joint_state_node = rclcpp::Node::make_shared("joint_state_subscriber");
-  joint_state_node->create_subscription<sensor_msgs::msg::JointState>(
+
+  auto joint_state_rg=joint_state_node->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+  rclcpp::SubscriptionOptions cb_options;
+  cb_options.callback_group = joint_state_rg;
+  auto joint_state_sub = joint_state_node->create_subscription<sensor_msgs::msg::JointState>(
     "/joint_states",
     rclcpp::SensorDataQoS(),
     [&joint_state_msg](const sensor_msgs::msg::JointState::SharedPtr msg)
     {
+      std::cout << "Joint states received." << std::endl;
       joint_state_msg = msg;
-    }
+    },
+    cb_options
   );
   executor.add_node(joint_state_node);
+
+
   RCLCPP_INFO(node->get_logger(),"Waiting for joint_states...");
   while (rclcpp::ok() && joint_state_msg->position.empty())
   {
@@ -848,17 +996,35 @@ int main(int argc, char **argv)
 
   // prepare the waypoints
   Eigen::VectorXd start_wp(joint_state_msg->position.size());
+  if (!permutationName(joint_names,
+                      joint_state_msg->name,
+                      joint_state_msg->position,
+                      joint_state_msg->velocity,
+                      joint_state_msg->effort,
+                      nullptr))
+  {
+    RCLCPP_ERROR(node->get_logger(),"Unable to permutate joint states");
+    return 1;
+  }
+  else
+  {
+    RCLCPP_INFO(node->get_logger(),"Joint states permutated");
+  }
+
   for (size_t i = 0; i < joint_state_msg->position.size(); ++i)
   {
     start_wp(i) = joint_state_msg->position[i];
+    RCLCPP_INFO_STREAM(node->get_logger(),"Current joint "<<joint_state_msg->name[i]<<" position: "<<joint_state_msg->position[i]);
   }
 
   std::vector<Eigen::VectorXd> waypoints;
   waypoints.reserve(solution->getWaypoints().size()+1);
   waypoints.push_back(start_wp);
-  waypoints.insert(waypoints.end(),
-                   solution->getWaypoints().begin(),
-                   solution->getWaypoints().end());
+  for (const auto& wp : solution->getWaypoints())
+  {
+    RCLCPP_INFO_STREAM(node->get_logger(),"Waypoint: "<<wp.transpose());
+    waypoints.push_back(wp);
+  }
 
   // create the action client node
   auto action_client_node = std::make_shared<TestRRTActionClient>(options);

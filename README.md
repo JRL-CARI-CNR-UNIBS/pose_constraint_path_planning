@@ -2,9 +2,10 @@
 
 ## TODOs
 
-- once a path is found, execute it in rviz
 - time cap to planning?
-- choosing a minimal set of constraints to implement
+- rejection rate
+- rejection time
+- planning times
 
 ## Installation
 
@@ -208,3 +209,5 @@ You can add or remove constraints by editing `test_solver.yaml`
 4. Added constraint visualization
 5. Automated constraints parsing
 6. Rewrote launch files in Python
+7. Added constraints checking **after** the tree extention
+8. Added action client to simualte the trajectory
