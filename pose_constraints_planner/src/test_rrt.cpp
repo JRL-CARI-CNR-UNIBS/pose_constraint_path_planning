@@ -30,6 +30,13 @@
 #include <control_msgs/action/follow_joint_trajectory.hpp>
 #include "rclcpp_components/register_node_macro.hpp"
 
+// include fstream for logging
+#include <fstream>
+
+// testing flag, if set to 0 the action client will be used to send the computed trajectory to the robot
+// and richer logging will be printed
+#define TESTING 1
+
 // class to read the robot description from topic
 class RobotDescriptionNode : public rclcpp::Node
 {
@@ -267,6 +274,59 @@ struct GeometricConstraint
   Eigen::Vector3d max_angle;
   Eigen::Vector3d max_angle_cos;
 };
+
+bool check_constraints(const Eigen::Affine3d& T_current,
+                       const Eigen::Affine3d& T_start,
+                       const std::vector<GeometricConstraint>& constraints,
+                       std::stringstream* report = nullptr)
+{
+  for (const auto& constraint : constraints)
+  {
+    double value;
+
+    switch (constraint.type)
+    {
+      case GeometricConstraint::PLANE:
+        if (!check_plane_constraint(T_current,
+                                    constraint.plane_origin,
+                                    constraint.plane_normal,
+                                    constraint.plane_tolerance,
+                                    value))
+        {
+          if (report)
+            *report << "Plane constraint '" << constraint.name << "' violated. Distance: " << value << "\n";
+          return false;
+        }
+        break;
+
+      case GeometricConstraint::LINE:
+        if (!check_line_constraint(T_current,
+                                   constraint.line_origin,
+                                   constraint.line_dir,
+                                   constraint.line_max_distance,
+                                   value))
+        { 
+          if (report)
+            *report << "Line constraint '" << constraint.name << "' violated. Distance: " << value << "\n";
+          return false;
+        }
+        break;
+
+      case GeometricConstraint::ANGLE:
+        if (!check_angle_constraint(T_current,
+                                    T_start,
+                                    constraint.max_angle_cos,
+                                    value))
+        {
+          if (report)
+            *report << "Angle constraint '" << constraint.name << "' violated. Cosine of angle: " << value << "\n";
+          return false;
+        }
+        break;
+    }
+  }
+  return true;
+}
 
 bool permutationName(  const std::vector<std::string>& order_names,
                        std::vector<std::string>& names,
@@ -680,79 +740,29 @@ int main(int argc, char **argv)
   }
 
   RCLCPP_INFO(node->get_logger(),"Constraints laoded successfully.");
-  double tolerance=1e-3; // 1 mm
 
   // Check start and goal configurations against constraints
   Eigen::Affine3d T_b_goal=ik_solver->getFK(goal_conf);
 
-  for(const auto& gc : geometric_constraints)
+  std::stringstream report;
+
+  if(!check_constraints(T_b_start,T_b_start,geometric_constraints,&report))
   {
-    switch (gc.type)
-    {
-    case GeometricConstraint::LINE:
-      // check line constraint for start
-      double dist_start_to_line; // distance from point to line
-      if (!check_line_constraint(T_b_start,gc.line_origin,gc.line_dir,gc.line_max_distance,dist_start_to_line))
-      {
-        RCLCPP_ERROR(node->get_logger(),"Start configuration violates line constraint. Distance to line: %f",dist_start_to_line);
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Start point: "<<T_b_start.translation().transpose());
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
-        return 1;
-      }
-      // check line constraint for goal
-      double dist_goal_to_line; // distance from point to line
-      if (!check_line_constraint(T_b_goal,gc.line_origin,gc.line_dir,gc.line_max_distance,dist_goal_to_line))
-      {
-        RCLCPP_ERROR(node->get_logger(),"Goal configuration violates line constraint. Distance to line: %f",dist_goal_to_line);
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Goal point: "<<T_b_goal.translation().transpose());
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_b_goal.matrix());
-        return 1;
-      }
-      break;
-
-    case GeometricConstraint::ANGLE:
-      // check angle constraints
-      double angle_cos;
-      if (!check_angle_constraint(T_b_start,T_b_goal,gc.max_angle_cos,angle_cos))  // skip if the angle is too large
-      {
-        RCLCPP_ERROR(node->get_logger(),"Goal configuration violates orientation constraint.");
-        // RCLCPP_ERROR_STREAM(node->get_logger(),"Start axis: "<<a_b_start.transpose());
-        // RCLCPP_ERROR_STREAM(node->get_logger(),"Goal axis: "<<a_b_goal.transpose());
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_b_goal.matrix());
-        return 1;
-      }
-      break;
-
-    case GeometricConstraint::PLANE:
-      // check plane constraint for start
-      double dist_start_to_plane;
-      if (!check_plane_constraint(T_b_start,gc.plane_origin,gc.plane_normal,tolerance,dist_start_to_plane)) // tolerance
-      {
-        RCLCPP_ERROR(node->get_logger(),"Start configuration violates plane constraint. Distance to plane: %f",dist_start_to_plane);
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Goal point: "<<T_b_start.translation().transpose());
-        return 1;
-      }
-      // check plane constraint for goal
-      double dist_goal_to_plane; // distance from point to plane
-      if (!check_plane_constraint(T_b_goal,gc.plane_origin,gc.plane_normal,tolerance,dist_goal_to_plane)) // tolerance
-      {
-        RCLCPP_ERROR(node->get_logger(),"Goal configuration violates plane constraint. Distance to plane: %f",dist_goal_to_plane);
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Goal pint: "<<T_b_goal.translation().transpose());
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
-        RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_b_goal.matrix());
-        return 1;
-      }
-      break;
-    
-    default:
-      RCLCPP_ERROR_STREAM(node->get_logger(),"This should not happen!");
-      return 1;
-      break;
-    }
+    RCLCPP_ERROR(node->get_logger(),"Start configuration violates geometric constraints.");
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
+    return 1;
   }
-  
+
+  if(!check_constraints(T_b_goal,T_b_start,geometric_constraints,&report))
+  {
+    RCLCPP_ERROR(node->get_logger(),"Goal configuration violates geometric constraints.");
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_b_start.matrix());
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
+    return 1;
+  }
+
   RCLCPP_INFO(node->get_logger(),"Start and goal configurations satisfy the geometric constraints.");
 
   Eigen::VectorXd qrand;
@@ -771,199 +781,168 @@ int main(int argc, char **argv)
   double max_time_rrt = 0.0;
   double min_time_rrt = 0.0;
   double elapsed_rrt_i = 0.0;
+  double reject_time = 0.0; // time spent to reject samples
   std::vector<double> rrt_iteration_times;
 
-  double rejction_waster_time = 0.0;
-  while (rclcpp::ok())
+  int total_iterations = 0;
+  int rrt_rejections = 0;
+  int extension_rejections = 0;
+  int total_rejections = 0;
+
+  int test_cycles = 0;
+
+  if(TESTING)
   {
-    // measure starting time of eachi RRT iteration
-    start_time_rrt_i = clock::now();
-
-    double random_value = dis(gen);
-    if (random_value<goal_bias)
+    std::ofstream stats_file;
+    stats_file.open("test_solver_stats.txt",std::ios::app);
+    if (!stats_file.is_open())
     {
-      qrand=goal_conf;
+      RCLCPP_ERROR(node->get_logger(),"Unable to open stats file");
+      return 1;
     }
-    else
+    stats_file << "Nodes added, Total iterations, RRT rejections, Extension rejections, Total rejections, Total time [ms], Minimum time [ms], Maximum time [ms], Average time [ms], Total rejection time [ms]\n";
+    stats_file.close();
+  }
+
+  do{
+    tree->cleanTree();
+    nodes=0;
+    while (rclcpp::ok())
     {
-      // set start iteration time
-      auto iteration_time = clock::now();
+      // measure starting time of eachi RRT iteration
+      start_time_rrt_i = clock::now();
 
-      qrand=sampler->sample();
-
-      Eigen::Affine3d T_b_rand=ik_solver->getFK(qrand); // transformation from base to tool in qrand;
-      double angle_cos;
-      double dist_to_plane; // distance from point to plane
-      double dist_to_line; // distance from point to line
-      for(const auto& gc : geometric_constraints)
+      double random_value = dis(gen);
+      if (random_value<goal_bias)
       {
-        switch (gc.type)
+        qrand=goal_conf;
+      }
+      else
+      {
+        total_iterations++;
+
+        qrand=sampler->sample();
+
+        Eigen::Affine3d T_b_rand=ik_solver->getFK(qrand); // transformation from base to tool in qrand;
+
+        if(!check_constraints(T_b_rand,T_b_start,geometric_constraints,&report))
         {
-        case GeometricConstraint::LINE:
-          // check line constraint
-          if (!check_line_constraint(T_b_rand,gc.line_origin,gc.line_dir,gc.line_max_distance,dist_to_line))
+          rrt_rejections++;
+          total_rejections++;
+          // measure end time of each RRT iteration
+          end_time_rrt_i = clock::now();
+          elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+          reject_time += elapsed_rrt_i;
+          rrt_iteration_times.push_back(elapsed_rrt_i);
+          max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+          min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
+          continue;
+        }
+        // LOG every 1000 iterations of feasible points
+        if (cycles++>1000 and !TESTING)
+        {
+          RCLCPP_INFO_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+          RCLCPP_INFO_STREAM(node->get_logger(),"Current matrix:\n"<<T_b_rand.matrix());
+          RCLCPP_INFO_STREAM(node->get_logger(),"Current point: "<<T_b_rand.translation().transpose());
+          RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
+          RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
+          cycles=0;
+        }
+      }
+      if (tree->extend(qrand, new_node))
+      {
+        auto new_conf = new_node->getConfiguration();
+        RCLCPP_DEBUG_STREAM(node->get_logger(),"New node added: "<<new_conf.transpose());
+        if(!check_constraints(ik_solver->getFK(new_conf),
+                              T_b_start,
+                              geometric_constraints,
+                              &report))
+        {
+          total_rejections++;
+          extension_rejections++;
+
+          if(!TESTING)
           {
-            // measure end time of each RRT iteration
-            end_time_rrt_i = clock::now();
-            elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
-            rrt_iteration_times.push_back(elapsed_rrt_i);
-            max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
-            min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
-
-            // compute iteration duration
-            auto iteration_duration = clock::now() - iteration_time;
-            rejction_waster_time += std::chrono::duration<double, std::milli>(iteration_duration).count();
-
-            continue; // skip if point is too far from the line
+            RCLCPP_ERROR(node->get_logger(),"New configuration violates geometric constraints.");
+            RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+            RCLCPP_ERROR_STREAM(node->get_logger(),"Current matrix:\n"<<ik_solver->getFK(new_conf).matrix());
+            RCLCPP_ERROR_STREAM(node->get_logger(),"Current point: "<<ik_solver->getFK(new_conf).translation().transpose());
+            RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
+            RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
+            RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
           }
-          break;
 
-        case GeometricConstraint::ANGLE:
-          // check angle constraints
-          if (!check_angle_constraint(T_b_start,T_b_rand,gc.max_angle_cos,angle_cos))  // skip if the angle is too large
-          {
-            // measure end time of each RRT iteration
-            end_time_rrt_i = clock::now();
-            elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
-            rrt_iteration_times.push_back(elapsed_rrt_i);
-            max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
-            min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
-            continue; // skip if the angle is too large
-          }
-          break;
-
-        case GeometricConstraint::PLANE:
-          // check plane constraint
-          if (!check_plane_constraint(T_b_rand,gc.plane_origin,gc.plane_normal,tolerance,dist_to_plane))
-          {
-            // measure end time of each RRT iteration
-            end_time_rrt_i = clock::now();
-            elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
-            rrt_iteration_times.push_back(elapsed_rrt_i);
-            max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
-            min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
-            continue; // skip if point is too close to the plane
-          }
-          break;
+          tree->removeNode(new_node);
+          // measure end time of each RRT iteration
+          end_time_rrt_i = clock::now();
+          elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+          reject_time += elapsed_rrt_i;
+          rrt_iteration_times.push_back(elapsed_rrt_i);
+          max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+          min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
+          continue;
+        }
         
-        default:
-          RCLCPP_ERROR_STREAM(node->get_logger(),"This should not happen!");
-          return 1;
-          break;
-        }
-      }
-
-      // LOG every 1000 iterations of feasible points
-      if (cycles++>1000)
-      {
-        RCLCPP_INFO_STREAM(node->get_logger(),"dist_to_plane: "<<dist_to_plane);
-        RCLCPP_INFO_STREAM(node->get_logger(),"cos_angle_i: "<<angle_cos);
-        RCLCPP_INFO_STREAM(node->get_logger(),"T_b_rand:\n"<<T_b_rand.matrix());
-        RCLCPP_INFO_STREAM(node->get_logger(),"p_b_rand: "<<T_b_rand.translation().transpose());
-        RCLCPP_INFO_STREAM(node->get_logger(),"dist_to_line: "<<dist_to_line);
-        // RCLCPP_INFO_STREAM(node->get_logger(),"line_dir_normalized: "<<line_direction.normalized().transpose());
-        RCLCPP_DEBUG(node->get_logger(),"Added %d nodes",nodes);
-        RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
-        cycles=0;
-      }
-    }
-    double dist_to_plane;
-    if (tree->extend(qrand, new_node))
-    {
-      auto new_conf = new_node->getConfiguration();
-      RCLCPP_DEBUG_STREAM(node->get_logger(),"New node added: "<<new_conf.transpose());
-      if(!check_plane_constraint(ik_solver->getFK(new_conf),
-                                geometric_constraints[0].plane_origin,
-                                geometric_constraints[0].plane_normal,
-                                tolerance,
-                                dist_to_plane))
-      {
-        RCLCPP_ERROR(node->get_logger(),"New configuration violates plane constraint. Distance to plane: %f",dist_to_plane);
-        RCLCPP_ERROR_STREAM(node->get_logger(),"New point: "<<ik_solver->getFK(new_conf).translation().transpose());
-        RCLCPP_ERROR(node->get_logger(),"Total nodes %d",nodes);
-        tree->removeNode(new_node);
-        // measure end time of each RRT iteration
-        end_time_rrt_i = clock::now();
-        elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
-        rrt_iteration_times.push_back(elapsed_rrt_i);
-        max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
-        min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
-        continue;
-      }
-      double dist_to_line;
-      if(!check_line_constraint(ik_solver->getFK(new_conf),
-                               geometric_constraints[2].line_origin,
-                               geometric_constraints[2].line_dir,
-                               geometric_constraints[2].line_max_distance,
-                               dist_to_line))
-      {
-        RCLCPP_ERROR(node->get_logger(),"New configuration violates line constraint. Distance to line: %f, maximum allowed value: %f",dist_to_line, geometric_constraints[2].line_max_distance);
-        RCLCPP_ERROR_STREAM(node->get_logger(),"New point: "<<ik_solver->getFK(new_conf).translation().transpose());
-        RCLCPP_ERROR(node->get_logger(),"Total nodes %d",nodes);
-        tree->removeNode(new_node);
-        // measure end time of each RRT iteration
-        end_time_rrt_i = clock::now();
-        elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
-        rrt_iteration_times.push_back(elapsed_rrt_i);
-        max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
-        min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
-        continue;
-      }
-      double angle_cos;
-      if(!check_angle_constraint(ik_solver->getFK(start_conf),
-                                 ik_solver->getFK(new_conf),
-                                 geometric_constraints[1].max_angle_cos,
-                                 angle_cos))
-      {
-        RCLCPP_ERROR(node->get_logger(),"New configuration violates orientation constraint.");
-        RCLCPP_ERROR_STREAM(node->get_logger(),"New matrix:\n"<<ik_solver->getFK(new_conf).matrix());
-        RCLCPP_ERROR(node->get_logger(),"Total nodes %d",nodes);
-        tree->removeNode(new_node);
-        // measure end time of each RRT iteration
-        end_time_rrt_i = clock::now();
-        elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
-        rrt_iteration_times.push_back(elapsed_rrt_i);
-        max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
-        min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
-        continue;
-      }
-      nodes++;
-      if ((new_node->getConfiguration()-goal_conf).norm()<max_distance)
-      {
-        RCLCPP_INFO(node->get_logger(),"Checking if tree can reach goal");
-        if (checker->checkConnection(new_node->getConfiguration(),goal_conf))
+        nodes++;
+        if ((new_node->getConfiguration()-goal_conf).norm()<max_distance)
         {
-          tree->extend(qrand, goal_node);
-          RCLCPP_INFO(node->get_logger(),"Goal reached");
+          RCLCPP_INFO(node->get_logger(),"Checking if tree can reach goal");
+          if (checker->checkConnection(new_node->getConfiguration(),goal_conf))
+          {
+            tree->extend(qrand, goal_node);
+            RCLCPP_INFO(node->get_logger(),"Goal reached");
 
-          solution = std::make_shared<graph::core::Path>(tree->getConnectionToNode(goal_node), metrics, checker, logger);
-          solution->setTree(tree);
-          display->displayPathAndWaypoints(solution);
-          display->displayTree(tree,"graph_display",{0.0,0.0,1.0,0.15});
-          break;
+            solution = std::make_shared<graph::core::Path>(tree->getConnectionToNode(goal_node), metrics, checker, logger);
+            solution->setTree(tree);
+            display->displayPathAndWaypoints(solution);
+            display->displayTree(tree,"graph_display",{0.0,0.0,1.0,0.15});
+            break;
+          }
         }
       }
+      // measure end time of each RRT iteration
+      end_time_rrt_i = clock::now();
+      elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
+      rrt_iteration_times.push_back(elapsed_rrt_i);
+      max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
+      min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
     }
-    // measure end time of each RRT iteration
+
+    // measure end time of last RRT iteration
     end_time_rrt_i = clock::now();
     elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
     rrt_iteration_times.push_back(elapsed_rrt_i);
     max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
     min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
-  }
 
-  // measure end time of last RRT iteration
-  end_time_rrt_i = clock::now();
-  elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
-  rrt_iteration_times.push_back(elapsed_rrt_i);
-  max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
-  min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
-
-  // measure end time of RRT
-  auto end_time_rrt = clock::now();
-  double elapsed_rrt = std::chrono::duration<double, std::milli>(end_time_rrt - start_time_rrt).count();
-  RCLCPP_INFO_STREAM(node->get_logger(),"RRT found a solution in "<<elapsed_rrt<<" ms");
-  RCLCPP_INFO_STREAM(node->get_logger(),"RRT iteration times over "<<rrt_iteration_times.size()<<" iterations: min "<<min_time_rrt<<" ms, max "<<max_time_rrt<<" ms"<<", mean "<<(std::accumulate(rrt_iteration_times.begin(), rrt_iteration_times.end(), 0.0) / rrt_iteration_times.size())<<" ms");
+    // measure end time of RRT
+    auto end_time_rrt = clock::now();
+    double elapsed_rrt = std::chrono::duration<double, std::milli>(end_time_rrt - start_time_rrt).count();
+    RCLCPP_INFO_STREAM(node->get_logger(),"RRT found a solution in "<<elapsed_rrt<<" ms");
+    RCLCPP_INFO_STREAM(node->get_logger(),"RRT iteration times over "<<rrt_iteration_times.size()<<" iterations: min "<<min_time_rrt<<" ms, max "<<max_time_rrt<<" ms"<<", mean "<<(std::accumulate(rrt_iteration_times.begin(), rrt_iteration_times.end(), 0.0) / rrt_iteration_times.size())<<" ms");
+    if(TESTING)
+    {
+      std::ofstream stats_file;
+      stats_file.open("test_solver_stats.txt",std::ios::app);
+      if (!stats_file.is_open())
+      {
+        RCLCPP_ERROR(node->get_logger(),"Unable to open stats file");
+        return 1;
+      }
+      stats_file << nodes << ", "
+                 << total_iterations << ", "
+                 << rrt_rejections << ", "
+                 << extension_rejections << ", "
+                 << total_rejections << ","
+                 << elapsed_rrt << ", "
+                 << min_time_rrt << ", "
+                 << max_time_rrt << ", "
+                 << (std::accumulate(rrt_iteration_times.begin(), rrt_iteration_times.end(), 0.0) / rrt_iteration_times.size()) << ", "
+                 << reject_time << "\n";
+      stats_file.close();
+    }
+  }while(test_cycles++<50 || !TESTING);
+  
   
   // simulate the trajectory execution using an action client
   // first, get the current joint states

@@ -29,7 +29,7 @@ pose_constraints_planner:
         # Define an orientation constraint around z-axis with max angle 0.3 radians
         -   name: "geometric_constraint_2"
             type: "orientation"
-            max_angle: [-1.0,-1.0,4.0]  # [x,y,z] max angle in radians around each axis, -1.0 means no constraints
+            max_angle: [-1.0,-1.0,0.3]  # [x,y,z] max angle in radians around each axis, -1.0 means no constraints
         # Define a line constraint along x-axis at y=0.0, z=0.5
         -   name: "geometric_constraint_3"
             type: "line"
