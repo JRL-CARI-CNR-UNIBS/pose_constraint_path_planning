@@ -3,9 +3,6 @@
 ## TODOs
 
 - time cap to planning?
-- rejection rate
-- rejection time
-- planning times
 
 ## Installation
 
@@ -172,8 +169,10 @@ Use the following commands to launch the test:
 2. **Terminal 1**: Launch the pose constraints planner:
 
    ```bash
-   ros2 launch pose_constraints_planner test_solver.launch.py
+   ros2 launch pose_constraints_planner test_solver.launch.py test_mode:=0 use_sharework:=false
    ```
+
+   Set `test_mode` and `use_sharework` to enable testing mode and to select the test cell or the sharework cell (the sharework cell must be installed from [Sharework repo](https://github.com/JRL-CARI-CNR-UNIBS/sharework_cell)) parameters. If `test_mode` is set to N > 0 the program will perform the planning N times and print the results in a .csv file in the install folder.
 
 Make sure `rviz_config.rviz` is present in the `config` directory.
 
@@ -211,3 +210,4 @@ You can add or remove constraints by editing `test_solver.yaml`
 6. Rewrote launch files in Python
 7. Added constraints checking **after** the tree extention
 8. Added action client to simualte the trajectory
+9. Automated testing and results log to csv

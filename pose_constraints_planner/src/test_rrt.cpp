@@ -33,10 +33,6 @@
 // include fstream for logging
 #include <fstream>
 
-// testing flag, if set to 0 the action client will be used to send the computed trajectory to the robot
-// and richer logging will be printed
-#define TESTING 1
-
 // class to read the robot description from topic
 class RobotDescriptionNode : public rclcpp::Node
 {
@@ -98,7 +94,7 @@ class TestRRTActionClient : public rclcpp::Node
       return goal_done_.load();
     }
 
-    void send_goal()
+    void send_goal(std::vector<std::string> joint_names)
     {
       if (!this->_client_ptr->wait_for_action_server(std::chrono::seconds(10))) {
         RCLCPP_ERROR(this->get_logger(), "Action server not available, waiting...");
@@ -111,7 +107,7 @@ class TestRRTActionClient : public rclcpp::Node
       auto goal_msg = control_msgs::action::FollowJointTrajectory::Goal();
 
       // Fill in the goal message as needed
-      goal_msg.trajectory.joint_names = {"shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"};
+      goal_msg.trajectory.joint_names = joint_names; //{"shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"};
       trajectory_msgs::msg::JointTrajectoryPoint point;
       rclcpp::Duration time_from_start = rclcpp::Duration::from_seconds(0.0);
 
@@ -444,7 +440,15 @@ int main(int argc, char **argv)
   rclcpp::NodeOptions options;
   auto node = rclcpp::Node::make_shared("test_solver", options);
 
+  // Extract parameters
+  node->declare_parameter("test_mode", 0);
+  int test_mode = node->get_parameter("test_mode").as_int();
+  RCLCPP_INFO_STREAM(node->get_logger(),"Test mode: "<<(test_mode>0?std::string("ENABLED, %d iterations", test_mode):"DISABLED"));
 
+  node->declare_parameter("use_sharework", false);
+  bool use_sharework = false;
+  use_sharework = node->get_parameter("use_sharework").as_bool();
+  RCLCPP_INFO_STREAM(node->get_logger(),"Use Sharework configuration: "<<(use_sharework>0?std::string("ENABLED"):std::string("DISABLED")));
 
   // Load logger configuration file
   std::string package_name = "pose_constraints_planner";
@@ -530,10 +534,10 @@ int main(int argc, char **argv)
   }
 
   RCLCPP_INFO_STREAM(node->get_logger(),"Start conf: "<<start_conf.transpose());
-  RCLCPP_INFO_STREAM(node->get_logger(),"Goal conf: " <<goal_conf .transpose());
+  RCLCPP_INFO_STREAM(node->get_logger(),"Goal conf: " <<goal_conf.transpose());
 
-  RCLCPP_INFO_STREAM(node->get_logger(),"LB conf: " <<lb .transpose());
-  RCLCPP_INFO_STREAM(node->get_logger(),"UB conf: " <<ub .transpose());
+  RCLCPP_INFO_STREAM(node->get_logger(),"LB conf: " <<lb.transpose());
+  RCLCPP_INFO_STREAM(node->get_logger(),"UB conf: " <<ub.transpose());
 
   // Set-up planning tools
   graph::core::GoalCostFunctionPtr goal_cost_fcn = std::make_shared<graph::core::GoalCostFunctionBase>();
@@ -608,9 +612,13 @@ int main(int argc, char **argv)
     return 1;
   }
 
-
   if (!checker->check(start_conf))
   {
+    RCLCPP_ERROR(node->get_logger(),"Joints:");
+    for(unsigned int i=0;i<joint_names.size();i++)
+    {
+      RCLCPP_ERROR_STREAM(node->get_logger(),joint_names.at(i) <<": "<<start_conf(i));
+    }
     RCLCPP_ERROR(node->get_logger(),"Start configuration is in collision");
     return 1;
   }
@@ -775,23 +783,11 @@ int main(int argc, char **argv)
    * ----------------------------------------------------------------------------------------------------*/
 
   using clock = std::chrono::steady_clock;
-  auto start_time_rrt = clock::now();
-  auto start_time_rrt_i = clock::now();
-  auto end_time_rrt_i = clock::now();
-  double max_time_rrt = 0.0;
-  double min_time_rrt = 0.0;
-  double elapsed_rrt_i = 0.0;
-  double reject_time = 0.0; // time spent to reject samples
-  std::vector<double> rrt_iteration_times;
-
-  int total_iterations = 0;
-  int rrt_rejections = 0;
-  int extension_rejections = 0;
-  int total_rejections = 0;
+  
 
   int test_cycles = 0;
 
-  if(TESTING)
+  if(test_mode>0)
   {
     std::ofstream stats_file;
     stats_file.open("test_solver_stats.txt",std::ios::app);
@@ -805,6 +801,20 @@ int main(int argc, char **argv)
   }
 
   do{
+    auto start_time_rrt = clock::now();
+    auto start_time_rrt_i = clock::now();
+    auto end_time_rrt_i = clock::now();
+    double max_time_rrt = 0.0;
+    double min_time_rrt = 0.0;
+    double elapsed_rrt_i = 0.0;
+    double reject_time = 0.0; // time spent to reject samples
+    std::vector<double> rrt_iteration_times;
+    
+    int total_iterations = 0;
+    int rrt_rejections = 0;
+    int extension_rejections = 0;
+    int total_rejections = 0;
+
     tree->cleanTree();
     nodes=0;
     while (rclcpp::ok())
@@ -839,7 +849,7 @@ int main(int argc, char **argv)
           continue;
         }
         // LOG every 1000 iterations of feasible points
-        if (cycles++>1000 and !TESTING)
+        if (cycles++>1000 && test_mode==0)
         {
           RCLCPP_INFO_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
           RCLCPP_INFO_STREAM(node->get_logger(),"Current matrix:\n"<<T_b_rand.matrix());
@@ -861,7 +871,7 @@ int main(int argc, char **argv)
           total_rejections++;
           extension_rejections++;
 
-          if(!TESTING)
+          if(test_mode==0)
           {
             RCLCPP_ERROR(node->get_logger(),"New configuration violates geometric constraints.");
             RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
@@ -920,7 +930,7 @@ int main(int argc, char **argv)
     double elapsed_rrt = std::chrono::duration<double, std::milli>(end_time_rrt - start_time_rrt).count();
     RCLCPP_INFO_STREAM(node->get_logger(),"RRT found a solution in "<<elapsed_rrt<<" ms");
     RCLCPP_INFO_STREAM(node->get_logger(),"RRT iteration times over "<<rrt_iteration_times.size()<<" iterations: min "<<min_time_rrt<<" ms, max "<<max_time_rrt<<" ms"<<", mean "<<(std::accumulate(rrt_iteration_times.begin(), rrt_iteration_times.end(), 0.0) / rrt_iteration_times.size())<<" ms");
-    if(TESTING)
+    if(test_mode>0)
     {
       std::ofstream stats_file;
       stats_file.open("test_solver_stats.txt",std::ios::app);
@@ -933,7 +943,7 @@ int main(int argc, char **argv)
                  << total_iterations << ", "
                  << rrt_rejections << ", "
                  << extension_rejections << ", "
-                 << total_rejections << ","
+                 << total_rejections << ", "
                  << elapsed_rrt << ", "
                  << min_time_rrt << ", "
                  << max_time_rrt << ", "
@@ -941,7 +951,7 @@ int main(int argc, char **argv)
                  << reject_time << "\n";
       stats_file.close();
     }
-  }while(test_cycles++<50 || !TESTING);
+  }while(test_cycles++<test_mode);
   
   
   // simulate the trajectory execution using an action client
@@ -1010,7 +1020,7 @@ int main(int argc, char **argv)
   executor.add_node(action_client_node);
 
   action_client_node->set_trajectory(waypoints);
-  action_client_node->send_goal();
+  action_client_node->send_goal(joint_names);
 
   while (rclcpp::ok() && !action_client_node->is_goal_done()) {
     executor.spin_some();

@@ -6,6 +6,6 @@ pose_constraints_planner:
     line       : {cylinder: [5, 0.5], color: [0.0,1.0,0.0,0.5], position: [0.0,0.0,0.0], quaternion: [0, 0, 0, 1]}
 
   scene_objects:
-   - {type: "box",      frame: "world", position: [0.5,0.5,0.5],  quaternion: [0, 0, 0, 1]}
+  #  - {type: "box",      frame: "world", position: [0.5,0.5,0.5],  quaternion: [0, 0, 0, 1]}
   #  - {type: "plane",   frame: "world", position: [0.0,0.8,0.0], quaternion: [ 0.7073883, 0, 0.0011262, -0.7068243 ]} 
   #  - {type: "line",    frame: "world", position: [0.0,0.45,0.95], quaternion: [ 0.4999998, 0.4999998, 0.4996018, 0.5003982 ]}

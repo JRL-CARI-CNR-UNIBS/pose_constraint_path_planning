@@ -117,7 +117,7 @@ class GeometricConstraintVisualizer(Node):
 
             elif ctype == "orientation":
                 # Represent orientation as an arrow pointing along constrained axis
-                marker.header.frame_id = "tool0"
+                # marker.header.frame_id = "tool0"
                 marker.type = Marker.ARROW
                 marker.pose.position.x = 0.0
                 marker.pose.position.y = 0.0
