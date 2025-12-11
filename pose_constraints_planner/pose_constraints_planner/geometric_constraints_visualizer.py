@@ -90,7 +90,7 @@ class GeometricConstraintVisualizer(Node):
             name = c.get('name', f'constraint_{count}')
             ctype = c.get('type')
             marker = Marker()
-            marker.header.frame_id = "world"
+            marker.header.frame_id = c.get('frame')
             marker.header.stamp = self.get_clock().now().to_msg()
             marker.ns = "geometric_constraints"
             marker.id = count

@@ -493,8 +493,16 @@ int main(int argc, char **argv)
       ub(idx) = bounds.max_position_;
     }
   }
+  for(const auto& linkName : kinematic_model->getLinkModelNames())
+  {
+    RCLCPP_INFO(node->get_logger(), "Link names: %s", linkName.c_str());
+  }
+
+  // If using sharework, display the path of open tip, else display the path of the end of the kinematic chain
+  std::string end_effector_link_name = use_sharework? "open_tip" : kinematic_model->getLinkModelNames().back();
+
   // creating the display
-  graph::display::DisplayPtr display = std::make_shared<graph::display::Display>(node,planning_scene,group_name,kinematic_model->getLinkModelNames().back());
+  graph::display::DisplayPtr display = std::make_shared<graph::display::Display>(node,planning_scene,group_name,end_effector_link_name);
   kinematic_model->getLinkModelNames();
   rclcpp::sleep_for(std::chrono::seconds(1));
 
@@ -635,6 +643,21 @@ int main(int argc, char **argv)
 
   // EXAMPLE: compute forward kinematics
   Eigen::Affine3d T_b_start=ik_solver->getFK(start_conf);
+  Eigen::Affine3d T_w_b;
+  std::string world_frame_name = "world";
+  std::string base_frame_name = use_sharework? "ur10e_base_link":"base";
+
+  if(!ik_solver->getTF(world_frame_name, base_frame_name, T_w_b))
+  {
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Failed to get the transform from " << world_frame_name << "to " << base_frame_name);
+    return 1;
+  }
+  else
+  {
+    RCLCPP_INFO_STREAM(node->get_logger(),"Transform world to base:\n"<<T_w_b.matrix());
+  }
+
+  Eigen::Affine3d T_w_start = T_w_b*T_b_start;
 
   // EXAMPLE: compute inverse kinematics
   ik_solver::Configurations seeds;
@@ -697,7 +720,7 @@ int main(int argc, char **argv)
     GeometricConstraint gc;
 
     gc.name = yaml_node["name"].as<std::string>();
-    if(yaml_node["type"].as<std::string>()=="plane") 
+    if(yaml_node["type"].as<std::string>()=="plane")
       gc.type = GeometricConstraint::PLANE; // for example
     else if(yaml_node["type"].as<std::string>()=="line")
       gc.type = GeometricConstraint::LINE;
@@ -751,22 +774,22 @@ int main(int argc, char **argv)
 
   // Check start and goal configurations against constraints
   Eigen::Affine3d T_b_goal=ik_solver->getFK(goal_conf);
-
+  Eigen::Affine3d T_w_goal=T_w_b*T_b_goal;
   std::stringstream report;
 
-  if(!check_constraints(T_b_start,T_b_start,geometric_constraints,&report))
+  if(!check_constraints(T_w_start,T_w_start,geometric_constraints,&report))
   {
     RCLCPP_ERROR(node->get_logger(),"Start configuration violates geometric constraints.");
-    RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_w_start.matrix());
     RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
     return 1;
   }
 
-  if(!check_constraints(T_b_goal,T_b_start,geometric_constraints,&report))
+  if(!check_constraints(T_w_goal,T_w_start,geometric_constraints,&report))
   {
     RCLCPP_ERROR(node->get_logger(),"Goal configuration violates geometric constraints.");
-    RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
-    RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_b_start.matrix());
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_w_start.matrix());
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_w_goal.matrix());
     RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
     return 1;
   }
@@ -784,7 +807,6 @@ int main(int argc, char **argv)
 
   using clock = std::chrono::steady_clock;
   
-
   int test_cycles = 0;
 
   if(test_mode>0)
@@ -834,8 +856,8 @@ int main(int argc, char **argv)
         qrand=sampler->sample();
 
         Eigen::Affine3d T_b_rand=ik_solver->getFK(qrand); // transformation from base to tool in qrand;
-
-        if(!check_constraints(T_b_rand,T_b_start,geometric_constraints,&report))
+        Eigen::Affine3d T_w_rand=T_w_b*T_b_rand;
+        if(!check_constraints(T_w_rand,T_w_start,geometric_constraints,&report))
         {
           rrt_rejections++;
           total_rejections++;
@@ -851,9 +873,9 @@ int main(int argc, char **argv)
         // LOG every 1000 iterations of feasible points
         if (cycles++>1000 && test_mode==0)
         {
-          RCLCPP_INFO_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
-          RCLCPP_INFO_STREAM(node->get_logger(),"Current matrix:\n"<<T_b_rand.matrix());
-          RCLCPP_INFO_STREAM(node->get_logger(),"Current point: "<<T_b_rand.translation().transpose());
+          RCLCPP_INFO_STREAM(node->get_logger(),"Start matrix:\n"<<T_w_start.matrix());
+          RCLCPP_INFO_STREAM(node->get_logger(),"Current matrix:\n"<<T_w_rand.matrix());
+          RCLCPP_INFO_STREAM(node->get_logger(),"Current point: "<<T_w_rand.translation().transpose());
           RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
           RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
           cycles=0;
@@ -863,15 +885,16 @@ int main(int argc, char **argv)
       {
         auto new_conf = new_node->getConfiguration();
         RCLCPP_DEBUG_STREAM(node->get_logger(),"New node added: "<<new_conf.transpose());
-        if(!check_constraints(ik_solver->getFK(new_conf),
-                              T_b_start,
+        if(!check_constraints(T_w_b*ik_solver->getFK(new_conf),
+                              T_w_start,
                               geometric_constraints,
                               &report))
         {
           total_rejections++;
           extension_rejections++;
 
-          if(test_mode==0)
+          // Log every 200 rejections
+          if(test_mode==0 && extension_rejections%200==0)
           {
             RCLCPP_ERROR(node->get_logger(),"New configuration violates geometric constraints.");
             RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
@@ -917,7 +940,6 @@ int main(int argc, char **argv)
       max_time_rrt = std::max(max_time_rrt, elapsed_rrt_i);
       min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
     }
-
     // measure end time of last RRT iteration
     end_time_rrt_i = clock::now();
     elapsed_rrt_i = std::chrono::duration<double, std::milli>(end_time_rrt_i - start_time_rrt_i).count();
@@ -953,7 +975,6 @@ int main(int argc, char **argv)
     }
   }while(test_cycles++<test_mode);
   
-  
   // simulate the trajectory execution using an action client
   // first, get the current joint states
   auto joint_state_msg = std::make_shared<sensor_msgs::msg::JointState>();
@@ -984,7 +1005,7 @@ int main(int argc, char **argv)
   RCLCPP_INFO(node->get_logger(),"joint_states received.");
 
   // prepare the waypoints
-  Eigen::VectorXd start_wp(joint_state_msg->position.size());
+  Eigen::VectorXd start_wp(joint_names.size());
   if (!permutationName(joint_names,
                       joint_state_msg->name,
                       joint_state_msg->position,
@@ -1000,7 +1021,7 @@ int main(int argc, char **argv)
     RCLCPP_INFO(node->get_logger(),"Joint states permutated");
   }
 
-  for (size_t i = 0; i < joint_state_msg->position.size(); ++i)
+  for (size_t i = 0; i < joint_names.size(); ++i)
   {
     start_wp(i) = joint_state_msg->position[i];
     RCLCPP_INFO_STREAM(node->get_logger(),"Current joint "<<joint_state_msg->name[i]<<" position: "<<joint_state_msg->position[i]);
