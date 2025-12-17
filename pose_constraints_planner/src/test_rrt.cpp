@@ -118,7 +118,7 @@ class TestRRTActionClient : public rclcpp::Node
         point.positions.assign(waypoint.begin(), waypoint.end());
         point.time_from_start = time_from_start;
         goal_msg.trajectory.points.push_back(point);
-        time_from_start = time_from_start + rclcpp::Duration::from_seconds(1.0); // increment time for next point
+        time_from_start = time_from_start + rclcpp::Duration::from_seconds(5.0); // increment time for next point
       }
 
       // Send the goal
@@ -757,7 +757,7 @@ int main(int argc, char **argv)
         gc.max_angle = Eigen::Vector3d(yaml_node["max_angle"][0].as<double>(),
                                        yaml_node["max_angle"][1].as<double>(),
                                        yaml_node["max_angle"][2].as<double>());
-          for (int i=0; i<3; i++)
+        for (int i=0; i<3; i++)
         {
           if (gc.max_angle(i)<0) // no constraint
             gc.max_angle_cos(i)=-1.1;

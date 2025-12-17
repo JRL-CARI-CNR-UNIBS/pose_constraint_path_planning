@@ -3,6 +3,10 @@ pose_constraints_planner:
         group_name: "ur_robot"
         start_configuration: [1.570796327,-2.443460953,2.443460953,-1.570796327,1.570796327,0.0] # home position for the sharework ur10e
         goal_configuration:  [0.785398,-1.5708,2.35619,-2.26893,1.5708,0.785398]
+        
+        #start_configuration: [0.785398,-1.5708,2.35619,-2.26893,1.5708,0.785398]
+        #goal_configuration:  [2.261540189948574,-1.5708,2.35619,-2.26893,1.5708,0.785398]
+        
         utopia_tolerance: 0.05 # tolerance wrt best solution
         extend: true # if true steps towards next point are truncated at max_distance length
         max_distance: 1.0 # to be used with extend: true
@@ -39,3 +43,9 @@ pose_constraints_planner:
             max_distance: 0.4          # max distance from the line
             origin: [0.25,0.0,1.3]     # point on the line
             direction: [0.0,1.0,0.0]   # line direction vector
+        -   name: "geometric_constraint_4"
+            type: "plane"
+            frame: "world"
+            origin: [0.0,0.0,1.1]       # point on the plane
+            normal: [0,0,1]             # normal vector of the plane
+
