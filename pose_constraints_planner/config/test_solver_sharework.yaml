@@ -25,7 +25,7 @@ pose_constraints_planner:
 
     # geometric constraints definition
     geometric_constraints:
-        # Define a plane constraint at y=0.5 with normal along y-axis
+        # Define a plane constraint at x=0.5 with normal along x-axis
         -   name: "geometric_constraint_1"
             type: "plane"
             frame: "world"
