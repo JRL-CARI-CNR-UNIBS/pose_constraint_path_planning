@@ -919,7 +919,7 @@ int main(int argc, char **argv)
           total_rejections++;
           extension_rejections++;
 
-          Log every 200 rejections
+          // Log every 200 rejections
           if(test_mode==0 && extension_rejections%200==0)
           {
             RCLCPP_ERROR(node->get_logger(),"New configuration violates geometric constraints.");
