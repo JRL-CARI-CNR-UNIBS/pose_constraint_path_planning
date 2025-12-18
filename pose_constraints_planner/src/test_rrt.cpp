@@ -274,11 +274,11 @@ struct GeometricConstraint
 bool check_constraints(const Eigen::Affine3d& T_current,
                        const Eigen::Affine3d& T_start,
                        const std::vector<GeometricConstraint>& constraints,
+                       double& value,
                        std::stringstream* report = nullptr)
 {
   for (const auto& constraint : constraints)
   {
-    double value;
 
     switch (constraint.type)
     {
@@ -293,6 +293,11 @@ bool check_constraints(const Eigen::Affine3d& T_current,
             *report << "Plane constraint '" << constraint.name << "' violated. Distance: " << value << "\n";
           return false;
         }
+        else
+        {
+          if (report)
+            *report << "Plane constraint '" << constraint.name << "' satisfied. Distance: " << value << "\n";
+        }
         break;
 
       case GeometricConstraint::LINE:
@@ -306,6 +311,11 @@ bool check_constraints(const Eigen::Affine3d& T_current,
             *report << "Line constraint '" << constraint.name << "' violated. Distance: " << value << "\n";
           return false;
         }
+        else
+        {
+           if (report)
+             *report << "Line constraint '" << constraint.name << "' satisfied. Distance: " << value << "\n";
+        }
         break;
 
       case GeometricConstraint::ANGLE:
@@ -317,6 +327,11 @@ bool check_constraints(const Eigen::Affine3d& T_current,
           if (report)
             *report << "Angle constraint '" << constraint.name << "' violated. Cosine of angle: " << value << "\n";
           return false;
+        }
+        else
+        {
+          if (report)
+            *report << "Angle constraint '" << constraint.name << "' satisfied. Cosine of angle: " << value << "\n";
         }
         break;
     }
@@ -499,7 +514,7 @@ int main(int argc, char **argv)
   }
 
   // If using sharework, display the path of open tip, else display the path of the end of the kinematic chain
-  std::string end_effector_link_name = use_sharework? "open_tip" : kinematic_model->getLinkModelNames().back();
+  std::string end_effector_link_name = use_sharework? "ur10e_tool0" : kinematic_model->getLinkModelNames().back();
 
   // creating the display
   graph::display::DisplayPtr display = std::make_shared<graph::display::Display>(node,planning_scene,group_name,end_effector_link_name);
@@ -741,6 +756,7 @@ int main(int argc, char **argv)
         gc.plane_normal = Eigen::Vector3d(yaml_node["normal"][0].as<double>(),
                                           yaml_node["normal"][1].as<double>(),
                                           yaml_node["normal"][2].as<double>());
+        gc.plane_tolerance = 1e-3; // 1 mm tolerance
         break;
 
       case GeometricConstraint::LINE:
@@ -776,21 +792,24 @@ int main(int argc, char **argv)
   Eigen::Affine3d T_b_goal=ik_solver->getFK(goal_conf);
   Eigen::Affine3d T_w_goal=T_w_b*T_b_goal;
   std::stringstream report;
+  double value;
 
-  if(!check_constraints(T_w_start,T_w_start,geometric_constraints,&report))
+  if(!check_constraints(T_w_start,T_w_start,geometric_constraints,value,&report))
   {
     RCLCPP_ERROR(node->get_logger(),"Start configuration violates geometric constraints.");
     RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_w_start.matrix());
-    RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
+    RCLCPP_ERROR(node->get_logger(),"Report: %s\n", report.str().c_str());
     return 1;
   }
 
-  if(!check_constraints(T_w_goal,T_w_start,geometric_constraints,&report))
+  report.clear();
+  report.str("");
+  if(!check_constraints(T_w_goal,T_w_start,geometric_constraints,value,&report))
   {
     RCLCPP_ERROR(node->get_logger(),"Goal configuration violates geometric constraints.");
     RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_w_start.matrix());
     RCLCPP_ERROR_STREAM(node->get_logger(),"Goal matrix:\n"<<T_w_goal.matrix());
-    RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
+    RCLCPP_ERROR(node->get_logger(),"Report: %s\n", report.str().c_str());
     return 1;
   }
 
@@ -857,7 +876,10 @@ int main(int argc, char **argv)
 
         Eigen::Affine3d T_b_rand=ik_solver->getFK(qrand); // transformation from base to tool in qrand;
         Eigen::Affine3d T_w_rand=T_w_b*T_b_rand;
-        if(!check_constraints(T_w_rand,T_w_start,geometric_constraints,&report))
+        // Clear and empty the string stream
+        report.clear();
+        report.str("");
+        if(!check_constraints(T_w_rand,T_w_start,geometric_constraints,value,&report))
         {
           rrt_rejections++;
           total_rejections++;
@@ -885,15 +907,19 @@ int main(int argc, char **argv)
       {
         auto new_conf = new_node->getConfiguration();
         RCLCPP_DEBUG_STREAM(node->get_logger(),"New node added: "<<new_conf.transpose());
+        // Clear and empty the string stream
+        report.clear();
+        report.str("");
         if(!check_constraints(T_w_b*ik_solver->getFK(new_conf),
                               T_w_start,
                               geometric_constraints,
+                              value,
                               &report))
         {
           total_rejections++;
           extension_rejections++;
 
-          // Log every 200 rejections
+          Log every 200 rejections
           if(test_mode==0 && extension_rejections%200==0)
           {
             RCLCPP_ERROR(node->get_logger(),"New configuration violates geometric constraints.");
@@ -904,6 +930,12 @@ int main(int argc, char **argv)
             RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
             RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
           }
+          // else
+          // {
+          //   RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
+          //   RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
+          //   RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
+          // }
 
           tree->removeNode(new_node);
           // measure end time of each RRT iteration
@@ -915,7 +947,13 @@ int main(int argc, char **argv)
           min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
           continue;
         }
-        
+        // else
+        // {
+        //   RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
+        //   RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
+        //   RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
+        // }
+
         nodes++;
         if ((new_node->getConfiguration()-goal_conf).norm()<max_distance)
         {
