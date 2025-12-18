@@ -514,7 +514,7 @@ int main(int argc, char **argv)
   }
 
   // If using sharework, display the path of open tip, else display the path of the end of the kinematic chain
-  std::string end_effector_link_name = use_sharework? "ur10e_tool0" : kinematic_model->getLinkModelNames().back();
+  std::string end_effector_link_name = use_sharework? "open_tip" : kinematic_model->getLinkModelNames().back();
 
   // creating the display
   graph::display::DisplayPtr display = std::make_shared<graph::display::Display>(node,planning_scene,group_name,end_effector_link_name);
@@ -659,8 +659,10 @@ int main(int argc, char **argv)
   // EXAMPLE: compute forward kinematics
   Eigen::Affine3d T_b_start=ik_solver->getFK(start_conf);
   Eigen::Affine3d T_w_b;
+  Eigen::Affine3d T_f_ee; //Transform from flange to end effector
   std::string world_frame_name = "world";
   std::string base_frame_name = use_sharework? "ur10e_base_link":"base";
+  std::string flange_link_name = use_sharework? "ur10e_tool0":"tool0";
 
   if(!ik_solver->getTF(world_frame_name, base_frame_name, T_w_b))
   {
@@ -672,7 +674,17 @@ int main(int argc, char **argv)
     RCLCPP_INFO_STREAM(node->get_logger(),"Transform world to base:\n"<<T_w_b.matrix());
   }
 
-  Eigen::Affine3d T_w_start = T_w_b*T_b_start;
+  if(!ik_solver->getTF(flange_link_name, end_effector_link_name, T_f_ee))
+    {
+      RCLCPP_ERROR_STREAM(node->get_logger(),"Failed to get the transform from " << flange_link_name << "to " << end_effector_link_name);
+      return 1;
+    }
+  else
+    {
+      RCLCPP_INFO_STREAM(node->get_logger(),"Transform flange to end effector:\n"<<T_f_ee.matrix());
+    }
+
+  Eigen::Affine3d T_w_start = T_w_b*T_b_start*T_f_ee;
 
   // EXAMPLE: compute inverse kinematics
   ik_solver::Configurations seeds;
@@ -790,7 +802,7 @@ int main(int argc, char **argv)
 
   // Check start and goal configurations against constraints
   Eigen::Affine3d T_b_goal=ik_solver->getFK(goal_conf);
-  Eigen::Affine3d T_w_goal=T_w_b*T_b_goal;
+  Eigen::Affine3d T_w_goal=T_w_b*T_b_goal*T_f_ee;
   std::stringstream report;
   double value;
 
@@ -875,7 +887,7 @@ int main(int argc, char **argv)
         qrand=sampler->sample();
 
         Eigen::Affine3d T_b_rand=ik_solver->getFK(qrand); // transformation from base to tool in qrand;
-        Eigen::Affine3d T_w_rand=T_w_b*T_b_rand;
+        Eigen::Affine3d T_w_rand=T_w_b*T_b_rand*T_f_ee;
         // Clear and empty the string stream
         report.clear();
         report.str("");
@@ -910,7 +922,7 @@ int main(int argc, char **argv)
         // Clear and empty the string stream
         report.clear();
         report.str("");
-        if(!check_constraints(T_w_b*ik_solver->getFK(new_conf),
+        if(!check_constraints(T_w_b*ik_solver->getFK(new_conf)*T_f_ee,
                               T_w_start,
                               geometric_constraints,
                               value,
@@ -920,16 +932,16 @@ int main(int argc, char **argv)
           extension_rejections++;
 
           // Log every 200 rejections
-          if(test_mode==0 && extension_rejections%200==0)
-          {
-            RCLCPP_ERROR(node->get_logger(),"New configuration violates geometric constraints.");
-            RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
-            RCLCPP_ERROR_STREAM(node->get_logger(),"Current matrix:\n"<<ik_solver->getFK(new_conf).matrix());
-            RCLCPP_ERROR_STREAM(node->get_logger(),"Current point: "<<ik_solver->getFK(new_conf).translation().transpose());
-            RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
-            RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
-            RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
-          }
+          // if(test_mode==0 && extension_rejections%200==0)
+          // {
+          //   RCLCPP_ERROR(node->get_logger(),"New configuration violates geometric constraints.");
+          //   RCLCPP_ERROR_STREAM(node->get_logger(),"Start matrix:\n"<<T_b_start.matrix());
+          //   RCLCPP_ERROR_STREAM(node->get_logger(),"Current matrix:\n"<<ik_solver->getFK(new_conf).matrix());
+          //   RCLCPP_ERROR_STREAM(node->get_logger(),"Current point: "<<ik_solver->getFK(new_conf).translation().transpose());
+          //   RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
+          //   RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
+          //   RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
+          // }
           // else
           // {
           //   RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
@@ -947,12 +959,13 @@ int main(int argc, char **argv)
           min_time_rrt = (min_time_rrt == 0.0) ? elapsed_rrt_i : std::min(min_time_rrt, elapsed_rrt_i);
           continue;
         }
-        // else
-        // {
-        //   RCLCPP_ERROR_STREAM(node->get_logger(),"Report:\n"<<report.str());
-        //   RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
-        //   RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
-        // }
+        else
+        {
+          RCLCPP_INFO_STREAM(node->get_logger(),"Transform world to "<< end_effector_link_name <<":\n"<<(T_w_b*ik_solver->getFK(new_conf)*T_f_ee).matrix());
+          RCLCPP_INFO_STREAM(node->get_logger(),"Report:\n"<<report.str());
+          RCLCPP_INFO(node->get_logger(),"Added %d nodes",nodes);
+          RCLCPP_INFO_STREAM(node->get_logger(),"Tree extended, "<<nodes<<" nodes in the tree");
+        }
 
         nodes++;
         if ((new_node->getConfiguration()-goal_conf).norm()<max_distance)
