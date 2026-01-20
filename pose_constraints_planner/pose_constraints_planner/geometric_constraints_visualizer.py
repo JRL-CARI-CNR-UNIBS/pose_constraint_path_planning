@@ -6,7 +6,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 import yaml
 import numpy as np
 from scipy.spatial.transform import Rotation
-from geometry_msgs.msg import Quaternion
+from geometry_msgs.msg import Quaternion, Point
 import os
 
 
@@ -117,17 +117,29 @@ class GeometricConstraintVisualizer(Node):
 
             elif ctype == "orientation":
                 # Represent orientation as an arrow pointing along constrained axis
-                # marker.header.frame_id = "tool0"
+                marker.header.frame_id = "ur10e_tool0"
                 marker.type = Marker.ARROW
-                marker.pose.position.x = 0.0
-                marker.pose.position.y = 0.0
-                marker.pose.position.z = 0.0
-                marker.scale.x = 0.5  # length
-                marker.scale.y = 0.02  # shaft diameter
-                marker.scale.z = 0.05  # head diameter
+                marker.scale.x = 0.02  # shaft diameter
+                marker.scale.y = 0.05  # head diameter
+                marker.scale.z = 0.05  # head length
                 marker.color.r = 0.0
                 marker.color.g = 0.0
                 marker.color.b = 1.0
+                if c['max_angle'][0] > -1.0:
+                    marker.points = [
+                        Point(x=0.0, y=0.0, z=0.0),
+                        Point(x=0.2, y=0.0, z=0.0)  # along +X
+                    ]
+                elif c['max_angle'][1] > -1.0:
+                    marker.points = [
+                        Point(x=0.0, y=0.0, z=0.0),
+                        Point(x=0.0, y=0.2, z=0.0)  # along +Y
+                    ]
+                elif c['max_angle'][2] > -1.0:
+                    marker.points = [
+                        Point(x=0.0, y=0.0, z=0.0),
+                        Point(x=0.0, y=0.0, z=0.2)  # along +Z
+                    ]
 
             elif ctype == "line":
                 # Represent line as a long thin cylinder

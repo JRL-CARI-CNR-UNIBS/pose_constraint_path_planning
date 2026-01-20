@@ -6,3 +6,4 @@ kdev4/
 *.autosave*
 *.idea
 *.txt
+.qtcreator/

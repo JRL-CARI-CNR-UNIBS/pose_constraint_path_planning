@@ -675,14 +675,14 @@ int main(int argc, char **argv)
   }
 
   if(!ik_solver->getTF(flange_link_name, end_effector_link_name, T_f_ee))
-    {
-      RCLCPP_ERROR_STREAM(node->get_logger(),"Failed to get the transform from " << flange_link_name << "to " << end_effector_link_name);
-      return 1;
-    }
+  {
+    RCLCPP_ERROR_STREAM(node->get_logger(),"Failed to get the transform from " << flange_link_name << "to " << end_effector_link_name);
+    return 1;
+  }
   else
-    {
-      RCLCPP_INFO_STREAM(node->get_logger(),"Transform flange to end effector:\n"<<T_f_ee.matrix());
-    }
+  {
+    RCLCPP_INFO_STREAM(node->get_logger(),"Transform flange to end effector:\n"<<T_f_ee.matrix());
+  }
 
   Eigen::Affine3d T_w_start = T_w_b*T_b_start*T_f_ee;
 

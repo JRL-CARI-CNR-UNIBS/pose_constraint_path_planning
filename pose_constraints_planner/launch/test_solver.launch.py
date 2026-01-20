@@ -96,7 +96,7 @@ def generate_launch_description():
         test_solver_config_file_arg,
         test_solver_test_mode_arg,
         use_sharework_arg,
-        test_solver_params,
+        TimerAction(period=1.0, actions=[test_solver_params]),
         scene_manager_params,
         ik_params,
         scene_manager,
