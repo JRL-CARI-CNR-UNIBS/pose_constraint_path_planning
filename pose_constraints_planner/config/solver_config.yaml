@@ -1,0 +1,18 @@
+pose_constraints_planner:
+    solver_config:
+        group_name: "ur_robot"
+        utopia_tolerance: 0.05 # tolerance wrt best solution
+        extend: true # if true steps towards next point are truncated at max_distance length
+        max_distance: 1.0 # to be used with extend: true
+        use_kdtree: true
+        checker_resolution: 0.01
+        parallel_checker_n_threads: 4
+        goal_bias: 0.1 # defines the probability of sampling the goal configuration
+
+        libraries: ["libgraph_core.so","libmoveit_collision_checker.so"]
+
+        # planner: RRT, BiRRT, RRT*, ANYTIMERRT
+        planner_plugin: graph::core::RRTPlugin
+        sampler_plugin: graph::core::InformedSamplerPlugin
+        metrics_plugin: graph::core::EuclideanMetricsPlugin
+        checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin

@@ -151,7 +151,7 @@ Use the following commands to launch the necessary components (source ros2_ws/in
 3. **Terminal 3**: Launch the pose constraints planner:
 
    ```bash
-   ros2 launch pose_constraints_planner test_solver.launch.yaml
+   ros2 launch pose_constraints_planner test_solver.launch.py
    ```
 
 This procedure is better to have a more clear control over the nodes.

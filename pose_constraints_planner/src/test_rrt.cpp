@@ -2,7 +2,8 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <moveit/robot_model_loader/robot_model_loader.h>
-#include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/move_group_interface/move_group_interface.hpp>
+
 
 // Graph core libraries
 #include <graph_core/solvers/rrt_star.h>
