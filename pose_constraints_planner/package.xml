@@ -25,6 +25,9 @@
   <depend>moveit_ros_planning_interface</depend>
   <depend>pose_constraints_msgs</depend>
 
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>rosidl_default_runtime</depend>
 
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
   <depend>control_msgs</depend>

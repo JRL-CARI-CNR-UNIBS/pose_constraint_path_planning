@@ -1,21 +1,66 @@
-// ROS and Moveit related libraries
-#include <ament_index_cpp/get_package_share_directory.hpp>
-#include <moveit_msgs/srv/get_planning_scene.hpp>
-#include <moveit/move_group_interface/move_group_interface.hpp>
+// pose_constraints_planner_node.cpp
+//
+// “Convenient” single-file node with BOTH requested changes:
+// 1) ONE action server: "/plan_with_constraints".
+//    It selects the correct planner at runtime using motion_plan_request.group_name.
+// 2) Goal pose is transformed to the planner world frame (e.g., "world") using TF.
+//
+// Notes / assumptions:
+// - Uses PoseConstraintsPlanner API you provided:
+//     setConstraints(msg), setStartConfiguration(q), setGoalConfiguration(q), setGoalPose(Affine3d),
+//     setLogging(bool), solve(timeout, solution, planning_info)
+// - Timeout is taken from motion_plan_request.allowed_planning_time (fallback 5.0).
+// - Goal parsing:
+//     * Joint goal if goal_constraints[0].joint_constraints not empty
+//     * Pose goal if goal_constraints[0] has position_constraints + orientation_constraints
+//       Pose is built from position_constraints[0].constraint_region.primitive_poses[0].position
+//       and orientation_constraints[0].orientation, then TF-transformed into world_frame.
+// - MotionPlanResponse trajectory is filled as JointTrajectory with 1s spacing between points,
+//   using start + solution->getWaypoints() (as in your snippet).
+//
+// You get:
+// - planners_map[group_name] = planner
+// - joint_names_map[group_name] = active joint names (stable order for that group)
+// - a single action server instance kept alive
 
+#include <ament_index_cpp/get_package_share_directory.hpp>
+
+// ROS
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
+#include <std_msgs/msg/string.hpp>
+
+// TF
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+
+// MoveIt
+#include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <moveit/robot_model_loader/robot_model_loader.h>
 
 
-// Graph core libraries
-#include <graph_core/solvers/rrt_star.h>
-#include <graph_core/plugins/solvers/tree_solver_plugin.h>
+#include <moveit_msgs/msg/motion_plan_request.hpp>
+#include <moveit_msgs/msg/motion_plan_response.hpp>
+#include <moveit_msgs/msg/move_it_error_codes.hpp>
+#include <moveit_msgs/msg/constraints.hpp>
+#include <moveit_msgs/msg/joint_constraint.hpp>
+#include <moveit_msgs/msg/position_constraint.hpp>
+#include <moveit_msgs/msg/orientation_constraint.hpp>
+
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
+#include <trajectory_msgs/msg/joint_trajectory_point.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+
+// Graph core + plugins
 #include <graph_core/plugins/samplers/sampler_base_plugin.h>
 #include <graph_core/plugins/metrics/metrics_base_plugin.h>
+#include <graph_core/graph/path.h>
 
-// Collision checker libraries
+// Collision checker plugin
 #include <moveit_collision_checker/plugins/collision_checkers/moveit_collision_checker_base_plugin.h>
 
-// Display libraries (to see add a Marker in RViz, topic: /marker_visualization_topic)
+// Display (optional)
 #include <graph_display/graph_display.h>
 
 // Class loader
@@ -24,364 +69,299 @@
 // IK solver
 #include "ik_solver/internal/ik_solver_node.ros2.hpp"
 
-// Action server libraries
-#include <rclcpp/rclcpp.hpp>
-#include <rclcpp_action/rclcpp_action.hpp>
-#include "rclcpp_components/register_node_macro.hpp"
 
-// include fstream for logging
-#include <fstream>
-
+// Planner
 #include <pose_constraints_planner/pose_constraints_planner.hpp>
+#include <pose_constraints_planner/plan_with_constraints_action_server.hpp>
 
-// class to read the robot description from topic
+// Action + msgs
+#include <pose_constraints_msgs/action/plan_with_constraints.hpp>
+#include <pose_constraints_msgs/msg/geometric_constraint_array.hpp>
+#include <pose_constraints_msgs/msg/planning_info.hpp>
+
+#include <Eigen/Geometry>
+
+#include <chrono>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
+// -------------------------------------------------------------------------------------------------
+// RobotDescriptionNode: reads /robot_description topic (std_msgs/String, transient_local)
+// -------------------------------------------------------------------------------------------------
 class RobotDescriptionNode : public rclcpp::Node
 {
 public:
   RobotDescriptionNode() : Node("robot_description_node")
   {
-    RCLCPP_INFO(this->get_logger(), "Started RobotDescriptionNode...");
-    // Subscriber to the "robot_description" topic
-
     subscription_ = this->create_subscription<std_msgs::msg::String>(
-                      "/robot_description",
-                      rclcpp::QoS(1).transient_local().reliable(), // this is because the robot description is published only once
-                      std::bind(&RobotDescriptionNode::callback, this, std::placeholders::_1));
+        "/robot_description",
+        rclcpp::QoS(1).transient_local().reliable(),
+        std::bind(&RobotDescriptionNode::callback, this, std::placeholders::_1));
+
+    RCLCPP_INFO(get_logger(), "Started RobotDescriptionNode, waiting for /robot_description ...");
   }
 
-
-
-  bool isRobotDescriptionReceived()
-  {
-    return !robot_description_.empty();
-  }
-  std::string getRobotDescription()
-  {
-    return robot_description_;
-  }
+  bool isRobotDescriptionReceived() const { return !robot_description_.empty(); }
+  std::string getRobotDescription() const { return robot_description_; }
 
 private:
-
   void callback(const std_msgs::msg::String::SharedPtr msg)
   {
-    robot_description_ = msg->data; // Store the robot description
-    std::string truncated_description = robot_description_.substr(0, 200);
-    RCLCPP_INFO(this->get_logger(), "Received robot description:\n%s", truncated_description.c_str());
+    robot_description_ = msg->data;
+    const std::string truncated = robot_description_.substr(0, 200);
+    RCLCPP_INFO(this->get_logger(), "Received robot description (first 200 chars):\n%s", truncated.c_str());
   }
+
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
-  std::string robot_description_ = ""; // Variable to store the robot description
+  std::string robot_description_;
 };
 
-
-bool permutationName(  const std::vector<std::string>& order_names,
-                       std::vector<std::string>& names,
-                       std::vector<double>& position,
-                       std::vector<double>& velocity,
-                       std::vector<double>& effort,
-                       std::stringstream* report)
+static std::string wait_for_robot_description(
+    rclcpp::executors::MultiThreadedExecutor& executor,
+    const std::shared_ptr<RobotDescriptionNode>& rd_node,
+    const std::chrono::seconds& timeout)
 {
-  if (names.size()<order_names.size())
-  {
-    if(report)
-      *report << "The vector of names to be sorted has size " << names.size()
-              << " that is smaller than vector of the sorted names (" << order_names.size() <<")";
-    return false;
-  }
-  if (names.size()!=position.size())
-  {
-    if(report)
-      *report << "Input Mismatch. The vector of names to be sorted has size " << names.size()
-              << " while position size is " << position.size();
-    return false;
-  }
-  if (names.size()!=velocity.size())
-  {
-    if(report)
-      *report << "Input Mismatch. The vector of names to be sorted has size " << names.size()
-              << " while velocity size is " << velocity.size();
-    return false;
-  }
-  if (names.size()!=effort.size())
-  {
-    if(report)
-      *report << "Input Mismatch. The vector of names to be sorted has size " << names.size()
-              << " while effort size is " << effort.size();
-    return false;
-  }
+  const auto t0 = std::chrono::steady_clock::now();
 
-
-
-  for (unsigned int iOrder=0;iOrder<order_names.size();iOrder++)
+  while (rclcpp::ok() && !rd_node->isRobotDescriptionReceived())
   {
-    if (names.at(iOrder).compare(order_names.at(iOrder)))
+    executor.spin_some();
+    rclcpp::sleep_for(std::chrono::milliseconds(100));
+
+    if (std::chrono::steady_clock::now() - t0 > timeout)
     {
-      for (unsigned int iNames=iOrder+1;iNames<names.size();iNames++)
-      {
-        if (!order_names.at(iOrder).compare(names.at(iNames)))
-        {
-          std::iter_swap(names.begin()+iOrder,    names.begin()+iNames);
-          std::iter_swap(position.begin()+iOrder, position.begin()+iNames);
-          std::iter_swap(velocity.begin()+iOrder, velocity.begin()+iNames);
-          std::iter_swap(effort.begin()+iOrder,   effort.begin()+iNames);
-          break;
-        }
-        if (iNames==(names.size()-1))
-        {
-          if(*report)
-          {
-            *report << "The Joint '" << order_names.at(iOrder) <<"' that is in the vector of the sorted names,"
-                    << "is missing in the vector to be sorted.";
-            *report << "Sorted Names: <";
-            for( size_t i=0;i<order_names.size();i++)
-              *report << order_names.at(i) <<",";
-            *report << "> vs Names to be ordered: <";
-            for( size_t i=0;i<names.size();i++)
-              *report << names.at(i) <<",";
-            *report <<">";
-          }
-          return false;
-        }
-      }
+      RCLCPP_ERROR(rd_node->get_logger(), "Timeout waiting for /robot_description.");
+      return {};
     }
   }
-  return true;
+
+  return rd_node->getRobotDescription();
 }
 
-int main(int argc, char **argv)
+
+// -------------------------------------------------------------------------------------------------
+// MAIN
+// -------------------------------------------------------------------------------------------------
+int main(int argc, char** argv)
 {
   rclcpp::init(argc, argv);
 
-  /* ----------------------------------------------------------------------------------------------------
-   * WAITING FOR ROBOT DESCRIPTION
-   * ----------------------------------------------------------------------------------------------------*/
-  // Instantiate RobotDescriptionNode
-  auto robot_description_node = std::make_shared<RobotDescriptionNode>();
+  // One executor for everything
+  rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 10);
 
+  // 1) Wait for /robot_description
+  auto rd_node = std::make_shared<RobotDescriptionNode>();
+  executor.add_node(rd_node);
 
-  // Add RobotDescriptionNode to the executor
+  const std::string robot_description = wait_for_robot_description(executor, rd_node, std::chrono::seconds(30));
+  if (robot_description.empty())
+    return 1;
 
-  rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(),10);
-  executor.add_node(robot_description_node);
-
-  RCLCPP_INFO(robot_description_node->get_logger(), "Waiting for robot_description to be received...");
-  auto start_time = std::chrono::steady_clock::now();
-  std::chrono::seconds timeout_duration(30); // Timeout after 30 seconds
-
-  while (rclcpp::ok() && !robot_description_node->isRobotDescriptionReceived())
-  {
-    executor.spin_some(); // Process callbacks
-    rclcpp::sleep_for(std::chrono::milliseconds(100)); // Avoid busy-waiting
-
-    auto elapsed_time = std::chrono::steady_clock::now() - start_time;
-    if (elapsed_time > timeout_duration)
-    {
-      RCLCPP_ERROR(robot_description_node->get_logger(), "Timeout waiting for robot_description.");
-      return 1; // Exit if the robot description is not received
-    }
-  }
-  RCLCPP_INFO(robot_description_node->get_logger(), "Robot description successfully received.");
-  std::string robot_description = robot_description_node->getRobotDescription();
-
-
-  /* ----------------------------------------------------------------------------------------------------
-   * READING PARAMETERS, LOADING PLUGINS, AND SETTING UP PLANNING TOOLS
-   * ----------------------------------------------------------------------------------------------------*/
+  // 2) Main node
   rclcpp::NodeOptions options;
   auto node = rclcpp::Node::make_shared("pose_constraints_planner", options);
+  executor.add_node(node);
 
-  // Extract parameters
+  // Ensure robot_description exists as a parameter on THIS node (RobotModelLoader reads parameters)
+  node->declare_parameter<std::string>("robot_description", robot_description);
 
-  // Load logger configuration file
-  std::string package_name = "pose_constraints_planner";
-  std::string package_path = ament_index_cpp::get_package_share_directory(package_name);
+  // TF buffer/listener (used to transform goal pose)
+  auto tf_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
+  auto tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
+  (void)tf_listener;
 
+  // 3) Logger
+  const std::string package_name = "pose_constraints_planner";
+  const std::string package_path = ament_index_cpp::get_package_share_directory(package_name);
   if (package_path.empty())
   {
-    RCLCPP_ERROR_STREAM(node->get_logger(),"Failed to get path for package '" << package_name);
+    RCLCPP_ERROR_STREAM(node->get_logger(), "Failed to get path for package '" << package_name << "'");
     return 1;
   }
-  std::string logger_file = package_path+"/config/logger_param.yaml";
-  cnr_logger::TraceLoggerPtr logger = std::make_shared<cnr_logger::TraceLogger>("pose_constraints_planner",logger_file);
 
-  // Get the robot description
-  std::string param_ns1 = "/"+package_name;
-  std::string param_ns2 = param_ns1+"/solver_config";
+  const std::string logger_file = package_path + "/config/logger_param.yaml";
+  cnr_logger::TraceLoggerPtr logger =
+      std::make_shared<cnr_logger::TraceLogger>("pose_constraints_planner", logger_file);
 
-  robot_model_loader::RobotModelLoader robot_model_loader(node,"robot_description");
+  // Namespaces used by your existing params
+  const std::string param_ns1 = "/" + package_name;
+  const std::string param_ns2 = param_ns1 + "/solver_config";
+
+  // 4) Robot model + planning scene
+  robot_model_loader::RobotModelLoader robot_model_loader(node, "robot_description");
   moveit::core::RobotModelPtr kinematic_model = robot_model_loader.getModel();
+  if (!kinematic_model)
+  {
+    RCLCPP_ERROR(node->get_logger(), "RobotModelLoader returned null model");
+    return 1;
+  }
 
+  planning_scene::PlanningScenePtr planning_scene =
+      std::make_shared<planning_scene::PlanningScene>(kinematic_model);
 
-  planning_scene::PlanningScenePtr planning_scene = std::make_shared<planning_scene::PlanningScene>(kinematic_model);
-
-
-  // waiting for the planning scene
-  rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr ps_client =
-      node->create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
-
+  // 5) Get planning scene from /get_planning_scene
+  auto ps_client = node->create_client<moveit_msgs::srv::GetPlanningScene>("/get_planning_scene");
   if (!ps_client->wait_for_service(std::chrono::seconds(10)))
   {
-    RCLCPP_ERROR(node->get_logger(),"Unable to connect to /get_planning_scene");
+    RCLCPP_ERROR(node->get_logger(), "Unable to connect to /get_planning_scene");
     return 1;
   }
 
-  auto ps_srv = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
-  auto result = ps_client->async_send_request(ps_srv);
-  if (rclcpp::spin_until_future_complete(node, result)!=rclcpp::FutureReturnCode::SUCCESS)
+  auto ps_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
+  auto ps_future = ps_client->async_send_request(ps_req);
+
+  if (executor.spin_until_future_complete(ps_future) != rclcpp::FutureReturnCode::SUCCESS)
   {
-    RCLCPP_ERROR(node->get_logger(),"Call to srv not ok");
+    RCLCPP_ERROR(node->get_logger(), "Call to /get_planning_scene failed");
     return 1;
   }
 
-  if (!planning_scene->setPlanningSceneMsg(result.get()->scene))
+  if (!planning_scene->setPlanningSceneMsg(ps_future.get()->scene))
   {
-    RCLCPP_ERROR(node->get_logger(),"unable to update planning scene");
+    RCLCPP_ERROR(node->get_logger(), "Unable to update planning scene");
     return 1;
   }
 
-  // Set-up planning tools
-  graph::core::GoalCostFunctionPtr goal_cost_fcn = std::make_shared<graph::core::GoalCostFunctionBase>();
-
-  // Set-up the class laoder
+  // 6) Plugin loader: load libraries
   cnr_class_loader::MultiLibraryClassLoader loader(false);
   std::vector<std::string> libraries;
-  if(not graph::core::get_param(logger,param_ns2,"libraries",libraries))
-  {
+  if (!graph::core::get_param(logger, param_ns2, "libraries", libraries))
     return 1;
-  }
 
-  for(const std::string& lib:libraries)
+  for (const auto& lib : libraries)
     loader.loadLibrary(lib);
 
+  // IK solver loader
+  pluginlib::ClassLoader<ik_solver::IkSolver> ik_loader("ik_solver", "ik_solver::IkSolver");
 
-  std::vector<std::string> group_names = kinematic_model->getJointModelGroupNames();
-  std::map<std::string,pose_constraints_planner::PoseConstraintsPlanner::Ptr> planners_map;
+  // 7) Build planners_map + joint_names_map
+  std::map<std::string, pose_constraints_planner::PoseConstraintsPlanner::Ptr> planners_map;
+  std::map<std::string, std::vector<std::string>> joint_names_map;
 
-  for (const std::string& group_name : group_names)
+  const std::vector<std::string> group_names = kinematic_model->getJointModelGroupNames();
+  const std::string world_frame = "world";
+  const std::string tool_frame  = "ur10e_tool0";  // align with your constructor usage
+
+  for (const auto& group_name : group_names)
   {
+    RCLCPP_INFO_STREAM(node->get_logger(), "Configuring group: " << group_name);
 
-    // Load collision checker plugin
-    std::string checker_plugin_name;
-    graph::core::get_param(logger,param_ns2,"checker_plugin",checker_plugin_name,(std::string)"graph::ros1::ParallelMoveitCollisionCheckerPlugin");
-
-    RCLCPP_INFO_STREAM(node->get_logger(),"Loading checker "<<checker_plugin_name);
-    std::shared_ptr<graph::collision_check::MoveitCollisionCheckerBasePlugin> checker_plugin = loader.createInstance<graph::collision_check::MoveitCollisionCheckerBasePlugin>(checker_plugin_name);
-
-    RCLCPP_INFO(node->get_logger(),"Configuring checker plugin ");
-    checker_plugin->init(param_ns2,planning_scene,logger);
-    graph::core::CollisionCheckerPtr checker = checker_plugin->getCollisionChecker();
-
-    // Load sampler plugin
-    std::string sampler_plugin_name;
-    graph::core::get_param(logger,param_ns2,"sampler_plugin",sampler_plugin_name,(std::string)"graph::core::InformedSamplerPlugin");
-
-    RCLCPP_INFO_STREAM(node->get_logger(),"Loading sampler "<<sampler_plugin_name);
-    std::shared_ptr<graph::core::SamplerBasePlugin> sampler_plugin = loader.createInstance<graph::core::SamplerBasePlugin>(sampler_plugin_name);
-
-
-
-    RCLCPP_INFO_STREAM(node->get_logger(),"Available group: "<<group_name);
-    const moveit::core::JointModelGroup* joint_model_group =  kinematic_model->getJointModelGroup(group_name);
-    std::vector<std::string> joint_names = joint_model_group->getActiveJointModelNames();
-
-    unsigned int dof = joint_names.size();
-    Eigen::VectorXd lb(dof); // lower bounds
-    Eigen::VectorXd ub(dof); // upper bounds
-
-    for (unsigned int idx = 0; idx < dof; idx++)
+    const moveit::core::JointModelGroup* jmg = kinematic_model->getJointModelGroup(group_name);
+    if (!jmg)
     {
-      const moveit::core::VariableBounds& bounds = kinematic_model->getVariableBounds(joint_names.at(idx));
+      RCLCPP_WARN_STREAM(node->get_logger(), "Skipping group '" << group_name << "' (JointModelGroup not found)");
+      continue;
+    }
+
+    const std::vector<std::string> joint_names = jmg->getActiveJointModelNames();
+    const unsigned int dof = static_cast<unsigned int>(joint_names.size());
+    if (dof == 0)
+    {
+      RCLCPP_WARN_STREAM(node->get_logger(), "Skipping group '" << group_name << "' (dof=0)");
+      continue;
+    }
+    joint_names_map[group_name] = joint_names;
+
+    // Bounds for sampler
+    Eigen::VectorXd lb(dof), ub(dof);
+    for (unsigned int i = 0; i < dof; ++i)
+    {
+      const auto& bounds = kinematic_model->getVariableBounds(joint_names.at(i));
       if (bounds.position_bounded_)
       {
-        lb(idx) = bounds.min_position_;
-        ub(idx) = bounds.max_position_;
+        lb(i) = bounds.min_position_;
+        ub(i) = bounds.max_position_;
+      }
+      else
+      {
+        lb(i) = -1e9;
+        ub(i) =  1e9;
       }
     }
 
-    // If using sharework, display the path of open tip, else display the path of the end of the kinematic chain
-    std::string end_effector_link_name = kinematic_model->getLinkModelNames().back();
-    // creating the display
-    graph::display::DisplayPtr display = std::make_shared<graph::display::Display>(node,planning_scene,group_name,end_effector_link_name);
+    // Collision checker plugin
+    std::string checker_plugin_name;
+    graph::core::get_param(logger, param_ns2, "checker_plugin", checker_plugin_name,
+                          std::string("graph::ros1::ParallelMoveitCollisionCheckerPlugin"));
 
+    RCLCPP_INFO_STREAM(node->get_logger(), "Loading checker: " << checker_plugin_name);
+    auto checker_plugin =
+        loader.createInstance<graph::collision_check::MoveitCollisionCheckerBasePlugin>(checker_plugin_name);
+    checker_plugin->init(param_ns2, planning_scene, logger);
+    graph::core::CollisionCheckerPtr checker = checker_plugin->getCollisionChecker();
 
+    // Sampler plugin
+    std::string sampler_plugin_name;
+    graph::core::get_param(logger, param_ns2, "sampler_plugin", sampler_plugin_name,
+                          std::string("graph::core::InformedSamplerPlugin"));
 
+    RCLCPP_INFO_STREAM(node->get_logger(), "Loading sampler: " << sampler_plugin_name);
+    auto sampler_plugin = loader.createInstance<graph::core::SamplerBasePlugin>(sampler_plugin_name);
 
-    RCLCPP_INFO(node->get_logger(),"Configuring sampler plugin ");
-    Eigen::VectorXd scale(dof); scale.setOnes(dof,1);
-
-    sampler_plugin->init(param_ns2,lb,ub,lb,ub,scale,logger);
+    Eigen::VectorXd scale(dof);
+    scale.setOnes();
+    sampler_plugin->init(param_ns2, lb, ub, lb, ub, scale, logger);
     graph::core::SamplerPtr sampler = sampler_plugin->getSampler();
 
-
-    std::string ik_plugin_name="/ur_ik_solver";
-    pluginlib::ClassLoader<ik_solver::IkSolver> ik_loader("ik_solver", "ik_solver::IkSolver");
-    std::shared_ptr<ik_solver::IkSolver> ik_solver = ik_loader.createSharedInstance("ik_solver/Ur10eIkSolver");
-    std::shared_ptr<tf2_ros::Buffer> tf_buffer;
-    std::shared_ptr<tf2_ros::TransformListener> listener;
-    tf_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
-    listener  = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
-    ik_solver->setBuffer(tf_buffer);
-
-    std::string param_what_;
-
-    if(!cnr::param::set(ik_plugin_name+std::string("/robot_description"), robot_description, param_what_))
-    {
-      RCLCPP_ERROR_STREAM(node->get_logger(), "Cannot set cnr::param(" << node->get_namespace() << std::string("/robot_description") << ") because: " << param_what_);
-    }
-    if (!ik_solver->config(ik_plugin_name))
-    {
-      RCLCPP_ERROR(node->get_logger(), "unable to configure ik_solver %s",ik_plugin_name.c_str());
-      rclcpp::sleep_for(std::chrono::seconds(100));
-
-      return 1;
-    }
-    RCLCPP_INFO(node->get_logger(),"IK solver configured");
-
-    // Load metrics plugin
+    // Metrics plugin
     std::string metrics_plugin_name;
-    graph::core::get_param(logger,param_ns2,"metrics_plugin",metrics_plugin_name,(std::string)"graph::core::EuclideanMetricsPlugin");
-    RCLCPP_INFO_STREAM(node->get_logger(),"Loading metrics "<<metrics_plugin_name);
-    std::shared_ptr<graph::core::MetricsBasePlugin> metrics_plugin = loader.createInstance<graph::core::MetricsBasePlugin>(metrics_plugin_name);
-    RCLCPP_INFO(node->get_logger(),"Configuring metrics plugin ");
-    metrics_plugin->init(param_ns2,logger);
+    graph::core::get_param(logger, param_ns2, "metrics_plugin", metrics_plugin_name,
+                          std::string("graph::core::EuclideanMetricsPlugin"));
+
+    RCLCPP_INFO_STREAM(node->get_logger(), "Loading metrics: " << metrics_plugin_name);
+    auto metrics_plugin = loader.createInstance<graph::core::MetricsBasePlugin>(metrics_plugin_name);
+    metrics_plugin->init(param_ns2, logger);
     graph::core::MetricsPtr metrics = metrics_plugin->getMetrics();
 
+    // IK solver
+    auto ik_solver = ik_loader.createSharedInstance("ik_solver/Ur10eIkSolver");
+    ik_solver->setBuffer(tf_buffer);
 
-    bool use_kdtree;
-    if(not graph::core::get_param(logger,param_ns2,"use_kdtree",use_kdtree))
+    const std::string ik_plugin_name = "/ur_ik_solver";
+    std::string param_what;
+
+    if (!cnr::param::set(ik_plugin_name + std::string("/robot_description"), robot_description, param_what))
     {
-      return 1;
-    }
-    double max_distance;
-    if(not graph::core::get_param(logger,param_ns2,"max_distance",max_distance))
-    {
-      return 1;
-    }
-    double goal_bias;
-    if(not graph::core::get_param(logger,param_ns2,"goal_bias",goal_bias))
-    {
-      return 1;
+      RCLCPP_ERROR_STREAM(node->get_logger(),
+                          "Cannot set cnr::param(" << ik_plugin_name << "/robot_description) because: " << param_what);
     }
 
-    std::cout << "Creating PoseConstraintsPlanner for group "<<group_name<<std::endl;
-    pose_constraints_planner::PoseConstraintsPlanner::Ptr planner =
-        std::make_shared<pose_constraints_planner::PoseConstraintsPlanner>(node,
-                                                                          checker,
-                                                                          ik_solver,
-                                                                          sampler,
-                                                                          metrics,
-                                                                          logger,
-                                                                          "world",
-                                                                          "ur10e_tool0");
+    if (!ik_solver->config(ik_plugin_name))
+    {
+      RCLCPP_ERROR(node->get_logger(), "Unable to configure ik_solver at ns '%s'", ik_plugin_name.c_str());
+      return 1;
+    }
+
+    // Display (optional)
+    const std::string ee_link = kinematic_model->getLinkModelNames().back();
+    auto display = std::make_shared<graph::display::Display>(node, planning_scene, group_name, ee_link);
+    (void)display;
+
+    // Build planner
+    RCLCPP_INFO_STREAM(node->get_logger(), "Creating PoseConstraintsPlanner for group '" << group_name << "'");
+    auto planner = std::make_shared<pose_constraints_planner::PoseConstraintsPlanner>(
+        node, checker, ik_solver, sampler, metrics, logger, world_frame, tool_frame);
 
     planners_map[group_name] = planner;
   }
 
-  // Keep the node alive
-  rclcpp::spin(node);
+  // 8) Create ONE action server: "/plan_with_constraints"
+  auto mux_server = std::make_shared<pose_constraints_planner::PlanWithConstraintsMuxActionServer>(
+      node,
+      "/plan_with_constraints",
+      world_frame,
+      tf_buffer,
+      planners_map,
+      joint_names_map);
 
+  RCLCPP_INFO(node->get_logger(), "Ready. Spinning...");
+  executor.spin();
 
-
-
-
+  rclcpp::shutdown();
   return 0;
 }

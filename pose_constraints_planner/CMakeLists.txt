@@ -6,6 +6,12 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # find dependencies
+
+find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
+find_package(rosidl_default_runtime REQUIRED)
+
+
 find_package(moveit_collision_checker REQUIRED)
 find_package(moveit_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
@@ -54,6 +60,7 @@ set(ROS_DEPS
 add_library(pose_constraints_planner SHARED
     src/pose_constraints_planner/pose_constraints_manager.cpp
     src/pose_constraints_planner/pose_constraints_planner.cpp
+    src/pose_constraints_planner/plan_with_constraints_action_server.cpp
 )
 target_include_directories(pose_constraints_planner PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -76,6 +83,8 @@ target_include_directories(pose_constraints_planner_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
 
+
+
 target_compile_features(pose_constraints_planner_node PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 target_link_libraries(pose_constraints_planner_node PUBLIC
     pose_constraints_planner::pose_constraints_planner
@@ -85,9 +94,15 @@ target_link_libraries(pose_constraints_planner_node PUBLIC
     graph_display::graph_display
     pose_constraints_msgs::pose_constraints_msgs__rosidl_generator_cpp
     moveit_msgs::moveit_msgs__rosidl_generator_cpp
+    pose_constraints_msgs::pose_constraints_msgs__rosidl_typesupport_cpp
 )
 
-ament_target_dependencies(pose_constraints_planner_node PUBLIC rclcpp moveit_core moveit_ros_planning_interface)
+ament_target_dependencies(pose_constraints_planner_node PUBLIC
+        rclcpp
+        rclcpp_action
+        rosidl_default_runtime
+        moveit_core
+        moveit_ros_planning_interface)
 
 
 install(TARGETS
