@@ -245,6 +245,8 @@ namespace pose_constraints_planner
             }
           }
         }
+        if (found_solution)
+          break;
       }
       // measure end time of each RRT iteration
       end_time_rrt_i = std::chrono::steady_clock::now();
