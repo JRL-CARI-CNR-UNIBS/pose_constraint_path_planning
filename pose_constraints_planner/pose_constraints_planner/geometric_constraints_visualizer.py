@@ -135,7 +135,7 @@ class GeometricConstraintsVisualizer(Node):
             10
         )
 
-        self.create_timer(2.0, self._on_timer)
+        self.create_timer(0.25, self._on_timer)
 
         self.get_logger().info("GeometricConstraintsVisualizer started. Waiting for /geometry_constraints...")
 
