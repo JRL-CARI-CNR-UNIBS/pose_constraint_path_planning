@@ -72,6 +72,7 @@ target_link_libraries(pose_constraints_planner
   PUBLIC
     graph_core::graph_core
     ik_solver::ik_solver
+    graph_display::graph_display
     pose_constraints_msgs::pose_constraints_msgs__rosidl_generator_cpp
 )
 

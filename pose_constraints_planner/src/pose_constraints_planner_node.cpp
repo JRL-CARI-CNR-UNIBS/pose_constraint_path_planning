@@ -338,14 +338,12 @@ int main(int argc, char** argv)
     }
 
     // Display (optional)
-    const std::string ee_link = kinematic_model->getLinkModelNames().back();
-    auto display = std::make_shared<graph::display::Display>(node, planning_scene, group_name, ee_link);
-    (void)display;
-
+    auto display = std::make_shared<graph::display::Display>(node, planning_scene, group_name, tool_frame);
+    
     // Build planner
     RCLCPP_INFO_STREAM(node->get_logger(), "Creating PoseConstraintsPlanner for group '" << group_name << "'");
     auto planner = std::make_shared<pose_constraints_planner::PoseConstraintsPlanner>(
-        node, checker, ik_solver, sampler, metrics, logger, world_frame, tool_frame);
+        node, checker, ik_solver, sampler, metrics, logger, display, world_frame, tool_frame);
 
     planners_map[group_name] = planner;
   }

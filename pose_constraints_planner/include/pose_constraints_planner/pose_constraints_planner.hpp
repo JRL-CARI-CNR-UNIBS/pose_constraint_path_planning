@@ -9,6 +9,8 @@
 #include "ik_solver/internal/ik_solver_node.ros2.hpp"
 #include <graph_core/graph/tree.h>
 
+#include <graph_display/graph_display.h>
+
 
 namespace pose_constraints_planner
 {
@@ -33,6 +35,7 @@ namespace pose_constraints_planner
                            graph::core::SamplerPtr sampler,
                            graph::core::MetricsPtr metrics,
                            cnr_logger::TraceLoggerPtr logger_ptr,
+                           graph::display::DisplayPtr display,
                            std::string world_frame = "world",
                            std::string tool_frame = "ur10_tool0");
 
@@ -106,6 +109,8 @@ namespace pose_constraints_planner
     PoseConstraintsManager  pose_constraints_manager_;
 
     bool print_log_ = false;
+
+    graph::display::DisplayPtr display_;
   };
 
 }  // namespace pose_constraints_planner

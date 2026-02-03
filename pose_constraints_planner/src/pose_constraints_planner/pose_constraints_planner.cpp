@@ -1,12 +1,11 @@
 #include <pose_constraints_planner/pose_constraints_planner.hpp>
-
 #include <cmath>
 
 
 namespace pose_constraints_planner
 {
 
-  PoseConstraintsPlanner::PoseConstraintsPlanner(rclcpp::Node::SharedPtr node, graph::core::CollisionCheckerPtr collision_checker, std::shared_ptr<ik_solver::IkSolver> ik_solver, graph::core::SamplerPtr sampler, graph::core::MetricsPtr metrics, cnr_logger::TraceLoggerPtr logger_ptr, std::string world_frame, std::string tool_frame)
+  PoseConstraintsPlanner::PoseConstraintsPlanner(rclcpp::Node::SharedPtr node, graph::core::CollisionCheckerPtr collision_checker, std::shared_ptr<ik_solver::IkSolver> ik_solver, graph::core::SamplerPtr sampler, graph::core::MetricsPtr metrics, cnr_logger::TraceLoggerPtr logger_ptr, graph::display::DisplayPtr display, std::string world_frame, std::string tool_frame)
     : node_(node),
       ik_solver_(ik_solver),
       checker_(collision_checker),
@@ -18,6 +17,8 @@ namespace pose_constraints_planner
     tool_frame_ = tool_frame;
     std::string base_frame = ik_solver_->base_frame();
     std::string flange_frame = ik_solver_->flange_frame();
+
+    display_ = display;
 
     RCLCPP_INFO_STREAM(node_->get_logger(),"PoseConstraintsPlanner Frames: world='"<<world_frame_<<"', base='"<<base_frame<<"', flange='"<<flange_frame<<"', tool='"<<tool_frame_<<"'");
 
@@ -265,6 +266,18 @@ namespace pose_constraints_planner
     planning_info.average_iteration_time = (std::accumulate(rrt_iteration_times.begin(), rrt_iteration_times.end(), 0.0) / rrt_iteration_times.size());
     planning_info.total_reject_time = reject_time;
 
+    RCLCPP_INFO_STREAM(node_->get_logger(),"Planning finished in "<<planning_info.total_time<<" seconds, displaying results...");
+
+    if (!display_)
+      RCLCPP_ERROR_STREAM(node_->get_logger(),"No display instance provided, cannot display the tree and the solution path.");
+    else
+    {
+      if (found_solution)
+        display_->displayPathAndWaypoints(solution);
+  
+      display_->displayTree(tree,"graph_display",{0.0,0.0,1.0,0.15});
+    }
+    RCLCPP_INFO_STREAM(node_->get_logger(),"Total nodes in the tree: "<<tree->getNumberOfNodes());
     return found_solution;
   }
 
