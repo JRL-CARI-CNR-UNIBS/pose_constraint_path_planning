@@ -120,7 +120,7 @@ bool PoseConstraintsManager::checkPlaneConstraint(const Eigen::Affine3d& T,
   Eigen::Vector3d vec_plane_to_p = T.translation() - plane_origin;
   distance = vec_plane_to_p.dot(plane_normal.normalized());  // distance from point to plane
 
-  if (std::abs(distance) < tolerance)  // tolerance
+  if (distance < tolerance)  // tolerance
   {
     return false;
   }
