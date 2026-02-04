@@ -58,6 +58,12 @@ namespace pose_constraints_planner
     bool setGoalConfiguration(const Eigen::VectorXd& goal_conf);
 
 
+    /* Get Constraints Manager
+     * @return pointer to the PoseConstraintsManager instance
+     */
+    PoseConstraintsManager::Ptr getConstraintsManager() const { return pose_constraints_manager_; }
+
+
     /* Set the goal pose and compute its IK solutions
      * @param goal_pose The goal end-effector pose
      * @return true if the goal pose respects the pose constraints, false otherwise
@@ -78,6 +84,9 @@ namespace pose_constraints_planner
                graph::core::PathPtr& solution,
                info& planning_info);
 
+    Eigen::Affine3d getStartPose() const { return T_w_start; }
+    Eigen::Affine3d getFlangeToToolPose() const { return T_f_t; }
+    Eigen::Affine3d getWorldToBaseTransform() const { return T_w_b; }
   protected:
     Eigen::VectorXd start_config_;
     Eigen::Affine3d goal_pose_;
@@ -103,7 +112,8 @@ namespace pose_constraints_planner
     Eigen::Affine3d T_t_f; // tool to flange
     Eigen::Affine3d T_w_start; // world to start pose
 
-    PoseConstraintsManager  pose_constraints_manager_;
+    PoseConstraintsManager::Ptr  pose_constraints_manager_;
+
 
     bool print_log_ = false;
   };

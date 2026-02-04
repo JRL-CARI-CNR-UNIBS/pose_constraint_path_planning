@@ -31,11 +31,12 @@ namespace pose_constraints_planner
 
     T_b_w = T_w_b.inverse();
     T_t_f = T_f_t.inverse();
+    pose_constraints_manager_ = std::make_shared<PoseConstraintsManager>();
   }
 
   void PoseConstraintsPlanner::setConstraints(const pose_constraints_msgs::msg::GeometricConstraintArray &constraints)
   {
-    pose_constraints_manager_.setConstraints(constraints);
+    pose_constraints_manager_->setConstraints(constraints);
   }
 
   bool PoseConstraintsPlanner::setStartConfiguration(const Eigen::VectorXd &start_config)
@@ -43,7 +44,7 @@ namespace pose_constraints_planner
     T_w_start = ik_solver_->computeFk(start_config,
                                       T_w_b,
                                       T_f_t);
-    if (!pose_constraints_manager_.checkConstraints(T_w_start,T_w_start))
+    if (!pose_constraints_manager_->checkConstraints(T_w_start,T_w_start))
     {
       RCLCPP_ERROR_STREAM(node_->get_logger(),"Start configuration violates pose constraints.");
       return false;
@@ -57,7 +58,7 @@ namespace pose_constraints_planner
     Eigen::Affine3d T_w_goal = ik_solver_->computeFk(goal_conf,
                                                      T_w_b,
                                                      T_f_t);
-    if (!pose_constraints_manager_.checkConstraints(T_w_goal,T_w_start))
+    if (!pose_constraints_manager_->checkConstraints(T_w_goal,T_w_start))
     {
       RCLCPP_ERROR_STREAM(node_->get_logger(),"Goal configuration violates pose constraints.");
       return false;
@@ -70,7 +71,7 @@ namespace pose_constraints_planner
 
   bool PoseConstraintsPlanner::setGoalPose(const Eigen::Affine3d &goal_pose)
   {
-    if (!pose_constraints_manager_.checkConstraints(goal_pose,T_w_start))
+    if (!pose_constraints_manager_->checkConstraints(goal_pose,T_w_start))
     {
       RCLCPP_ERROR_STREAM(node_->get_logger(),"Goal configuration violates pose constraints.");
       return false;
@@ -165,7 +166,7 @@ namespace pose_constraints_planner
                                                        T_w_b,
                                                        T_f_t); // transformation from base to tool in qrand;
 
-        if (!pose_constraints_manager_.checkConstraints(T_w_rand,T_w_start,&report))
+        if (!pose_constraints_manager_->checkConstraints(T_w_rand,T_w_start,&report))
         {
           rrt_rejections++;
           total_rejections++;
@@ -198,7 +199,7 @@ namespace pose_constraints_planner
                                                         T_w_b,
                                                         T_f_t);
         RCLCPP_DEBUG_STREAM(node_->get_logger(),"New node added: "<<new_conf.transpose());
-        if(!pose_constraints_manager_.checkConstraints(T_w_new,
+        if(!pose_constraints_manager_->checkConstraints(T_w_new,
                                                        T_w_start,
                                                        &report))
         {

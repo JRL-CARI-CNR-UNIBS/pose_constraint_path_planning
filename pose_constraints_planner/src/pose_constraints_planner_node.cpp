@@ -242,6 +242,7 @@ int main(int argc, char** argv)
   // 7) Build planners_map + joint_names_map
   std::map<std::string, pose_constraints_planner::PoseConstraintsPlanner::Ptr> planners_map;
   std::map<std::string, std::vector<std::string>> joint_names_map;
+  std::map<std::string, pose_constraints_planner::PoseConstrainedPathLocalOptimizerPtr> local_optimizers_map;
 
   const std::vector<std::string> group_names = kinematic_model->getJointModelGroupNames();
   const std::string world_frame = "world";
@@ -347,7 +348,27 @@ int main(int argc, char** argv)
     auto planner = std::make_shared<pose_constraints_planner::PoseConstraintsPlanner>(
         node, checker, ik_solver, sampler, metrics, logger, world_frame, tool_frame);
 
+
+
+	// Build local optimizer
+	pose_constraints_planner::PoseConstraintsManager::Ptr pcm = planner->getConstraintsManager();
+	pose_constraints_planner::PoseConstrainedPathLocalOptimizer::Ptr local_optimizer;
+
+	bool use_local_optimizer = false;
+	graph::core::get_param(logger, param_ns2, "use_local_optimizer", use_local_optimizer, false);
+
+	if (use_local_optimizer)
+	{
+  		local_optimizer =
+        std::make_shared<pose_constraints_planner::PoseConstrainedPathLocalOptimizer>(
+            checker, metrics, logger, ik_solver,
+            planner->getWorldToBaseTransform(), planner->getFlangeToToolPose(), planner->getStartPose(), pcm);
+		local_optimizer->config(param_ns2);
+	}
+
+
     planners_map[group_name] = planner;
+	local_optimizers_map[group_name] = local_optimizer;
   }
 
   // 8) Create ONE action server: "/plan_with_constraints"
@@ -357,7 +378,8 @@ int main(int argc, char** argv)
       world_frame,
       tf_buffer,
       planners_map,
-      joint_names_map);
+      joint_names_map,
+	  local_optimizers_map);
 
   RCLCPP_INFO(node->get_logger(), "Ready. Spinning...");
   executor.spin();

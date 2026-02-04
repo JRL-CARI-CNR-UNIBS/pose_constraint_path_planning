@@ -16,3 +16,9 @@ pose_constraints_planner:
         sampler_plugin: graph::core::InformedSamplerPlugin
         metrics_plugin: graph::core::EuclideanMetricsPlugin
         checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin
+
+        use_local_optimizer: true
+        simplify_max_conn_length: 0.5 # maximum connection length for the simplify step
+        warp_min_conn_length: 0.01 # minimum connection length for the warp step
+        warp_min_step_size: 0.01 # minimum step size for the warp step
+        max_stall_gen: 100

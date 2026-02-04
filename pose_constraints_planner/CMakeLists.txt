@@ -61,6 +61,7 @@ add_library(pose_constraints_planner SHARED
     src/pose_constraints_planner/pose_constraints_manager.cpp
     src/pose_constraints_planner/pose_constraints_planner.cpp
     src/pose_constraints_planner/plan_with_constraints_action_server.cpp
+    src/pose_constraints_planner/pose_constraints_path_local_optimizer.cpp
 )
 target_include_directories(pose_constraints_planner PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>

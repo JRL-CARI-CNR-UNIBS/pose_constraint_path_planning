@@ -14,6 +14,7 @@
 
 #include <graph_core/graph/path.h>
 #include <pose_constraints_planner/pose_constraints_planner.hpp>
+#include <pose_constraints_planner/pose_constraints_path_local_optimizer.h>
 
 #include <pose_constraints_msgs/action/plan_with_constraints.hpp>
 #include <pose_constraints_msgs/msg/geometric_constraint_array.hpp>
@@ -73,13 +74,16 @@ public:
       const std::string& world_frame,
       const std::shared_ptr<tf2_ros::Buffer>& tf_buffer,
       const std::map<std::string, pose_constraints_planner::PoseConstraintsPlanner::Ptr>& planners_map,
-      const std::map<std::string, std::vector<std::string>>& joint_names_map)
+      const std::map<std::string, std::vector<std::string>>& joint_names_map,
+      const std::map<std::string, pose_constraints_planner::PoseConstrainedPathLocalOptimizer::Ptr>& local_optimizers_map
+      )
   : node_(node),
     action_name_(action_name),
     world_frame_(world_frame),
     tf_buffer_(tf_buffer),
     planners_map_(planners_map),
-    joint_names_map_(joint_names_map)
+    joint_names_map_(joint_names_map),
+    local_optimizers_map_(local_optimizers_map)
   {
     if (!node_) throw std::runtime_error("MuxActionServer: node is null");
     if (!tf_buffer_) throw std::runtime_error("MuxActionServer: tf_buffer is null");
@@ -318,6 +322,23 @@ private:
         result->info = convert_planning_info_(pi);
         gh->abort(result);
         return;
+      }
+
+      // check if we have a local optimizer for this group
+      auto opt_it = local_optimizers_map_.find(group_name);
+      pose_constraints_planner::PoseConstrainedPathLocalOptimizerPtr path_optimizer_ = nullptr;
+      if (opt_it != local_optimizers_map_.end())
+      {
+        path_optimizer_ = opt_it->second;
+      }
+      // optimize path if we have a local optimizer
+      if (path_optimizer_)
+      {
+        std::cout<< "length before = " << solution->getWaypoints().size() << std::endl;
+        path_optimizer_->setPath(solution);
+        path_optimizer_->solve();
+        solution = path_optimizer_->getPath();
+        std::cout<< "length after = " << solution->getWaypoints().size() << std::endl;
       }
 
       feedback->status = "Converting solution";
@@ -643,6 +664,10 @@ private:
   // References to externally-owned maps (kept alive in main)
   const std::map<std::string, pose_constraints_planner::PoseConstraintsPlanner::Ptr>& planners_map_;
   const std::map<std::string, std::vector<std::string>>& joint_names_map_;
+
+  const std::map<std::string, pose_constraints_planner::PoseConstrainedPathLocalOptimizerPtr>& local_optimizers_map_;
+
+
 
   // Single lock: planners are stateful and this avoids cross-group concurrent corruption.
   std::mutex planner_mtx_;
