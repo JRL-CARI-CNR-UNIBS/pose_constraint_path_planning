@@ -39,7 +39,6 @@ bool PoseConstraintsManager::checkConstraints(const Eigen::Affine3d& T_current,
   for (const auto& constraint : constraints_)
   {
     double value;
-    std::cout<<"Checking constraint: '" << constraint.name << "' of type "<<constraint.type<<std::endl;
     switch (constraint.type)
     {
       case GeometricConstraint::PLANE:
@@ -62,12 +61,10 @@ bool PoseConstraintsManager::checkConstraints(const Eigen::Affine3d& T_current,
                                  constraint.line_max_distance,
                                  value))
         {
-          std::cout<<"Line constraint violated inside checkConstraints(). Value: "<<value<<std::endl;
           if (report)
             *report << "Line constraint '" << constraint.name << "' violated. Distance: " << value << "\n";
           return false;
         }
-        std::cout<<"Line constraint satisfied inside checkConstraints(). Value: "<<value<<std::endl;
         break;
 
       case GeometricConstraint::ANGLE:
@@ -82,9 +79,7 @@ bool PoseConstraintsManager::checkConstraints(const Eigen::Affine3d& T_current,
         }
         break;
     }
-    std::cout<<"Constraint '" << constraint.name << "' satisfied."<<std::endl;
   }
-  std::cout<<"All constraints satisfied."<<std::endl;
   return true;
 }
 
@@ -138,16 +133,11 @@ bool PoseConstraintsManager::checkLineConstraint(const Eigen::Affine3d& T,
   Eigen::Vector3d projection = p_to_line.dot(line_dir.normalized()) * line_dir.normalized();
   distance = (p_to_line - projection).norm();
 
-  std::cout<<"Distance from line: "<<distance << " Max allowed: "<<max_distance<<std::endl;
-  std::cout <<"Point: "<<T.translation().transpose()<<std::endl;
-  std::cout <<"Line origin: "<<line_origin.transpose()<<std::endl;
-  std::cout <<"Line direction: "<<line_dir.transpose()<<std::endl;
+  
   if (distance < max_distance)
   {
-    std::cout<<"Line constraint satisfied."<<std::endl;
     return true;
   }
-  std::cout<<"Line constraint violated."<<std::endl;
   return false;
 }
 
