@@ -338,6 +338,7 @@ private:
         path_optimizer_->setPath(solution);
         path_optimizer_->solve();
         solution = path_optimizer_->getPath();
+        planner->getDisplay()->displayPath(solution, "optimized_path",{0.0,1.0,0.0,1.0});
         std::cout<< "length after = " << solution->getWaypoints().size() << std::endl;
       }
 

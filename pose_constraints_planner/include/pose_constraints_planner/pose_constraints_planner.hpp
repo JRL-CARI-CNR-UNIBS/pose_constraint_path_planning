@@ -73,6 +73,14 @@ namespace pose_constraints_planner
      */
     bool setGoalPose(const Eigen::Affine3d& goal_pose);
 
+
+    /* Get Display
+     * @return pointer to the Display instance
+     */
+    graph::display::DisplayPtr getDisplay() const { return display_; }
+    
+    
+
     /* Enable or disable logging
      * @param enable True to enable logging, false to disable
      */
