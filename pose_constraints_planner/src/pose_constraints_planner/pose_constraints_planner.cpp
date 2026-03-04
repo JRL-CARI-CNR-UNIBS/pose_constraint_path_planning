@@ -149,7 +149,8 @@ namespace pose_constraints_planner
 
 
       // RRT algorithm implementation
-
+      start_time_rrt_i = std::chrono::steady_clock::now();
+      total_iterations++;
       double random_value = dis(gen);
       if (random_value<goal_bias)
       {
@@ -159,8 +160,6 @@ namespace pose_constraints_planner
       }
       else
       {
-        total_iterations++;
-
         qrand=sampler_->sample();
 
         Eigen::Affine3d T_w_rand=ik_solver_->computeFk(qrand,
