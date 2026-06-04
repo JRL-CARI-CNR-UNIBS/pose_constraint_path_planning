@@ -18,10 +18,19 @@
   <depend>graph_display</depend>
   <depend>urdfdom</depend>
   <depend>ik_solver</depend>
-  <depend>ur_ik_solver</depend>
   <depend>ik_solver_core</depend>
   <depend>moveit_core</depend>
+  <depend>rclpy</depend>
+  <depend>ament_cmake_python</depend>
+  <depend>moveit_ros_planning_interface</depend>
+  <depend>pose_constraints_msgs</depend>
 
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>rosidl_default_runtime</depend>
+
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+  <depend>control_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
