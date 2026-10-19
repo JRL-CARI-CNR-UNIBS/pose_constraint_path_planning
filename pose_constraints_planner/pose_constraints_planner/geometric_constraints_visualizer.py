@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""RViz visualization of the geometric pose constraints.
+
+Subscribes to /geometry_constraints (pose_constraints_msgs/GeometricConstraintArray) and
+publishes planes, lines and angle limits as markers on /geometric_constraints_markers.
+"""
 
 import math
 from typing import Optional, Tuple

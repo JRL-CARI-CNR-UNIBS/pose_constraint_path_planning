@@ -8,3 +8,6 @@ kdev4/
 *.txt
 .vscode/
 .qtcreator/
+
+# Doxygen output
+doxygen/

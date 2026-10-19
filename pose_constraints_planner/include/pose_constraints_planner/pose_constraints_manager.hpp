@@ -1,3 +1,7 @@
+/**
+ * @file pose_constraints_manager.hpp
+ * @brief Geometric constraints on the tool pose and their evaluation.
+ */
 #pragma once
 
 // Standard
@@ -15,26 +19,38 @@
 
 namespace pose_constraints_planner
 {
+/**
+ * @brief A geometric constraint on the tool pose (all quantities in the world frame).
+ *
+ * - @c PLANE: the signed distance of the tool origin from the plane (along @c plane_normal)
+ *   must be at least @c plane_tolerance, i.e. the tool stays on the side the normal points to;
+ * - @c LINE: the distance of the tool origin from the line must be less than @c line_max_distance;
+ * - @c ANGLE: for each axis i (x, y, z), the angle between the i-th rows of the current and of
+ *   the start rotation matrices must not exceed component i of @c max_angle. Use a value >= pi to leave an axis free.
+ */
 struct GeometricConstraint
 {
-  std::string name;
+  std::string name;  ///< Name, used in reports.
 
+  /**
+   * @brief Constraint type (same values as pose_constraints_msgs/GeometricConstraint).
+   */
   enum ConstraintType {PLANE, LINE, ANGLE};
-  ConstraintType type;
+  ConstraintType type;  ///< Constraint type.
 
   // Plane constraint parameters
-  Eigen::Vector3d plane_origin;
-  Eigen::Vector3d plane_normal;
-  double plane_tolerance;
+  Eigen::Vector3d plane_origin;  ///< PLANE: a point of the plane.
+  Eigen::Vector3d plane_normal;  ///< PLANE: normal pointing to the allowed side.
+  double plane_tolerance;  ///< PLANE: minimum signed distance from the plane.
 
   // Line constraint parameters
-  Eigen::Vector3d line_origin;
-  Eigen::Vector3d line_dir;
-  double line_max_distance;
+  Eigen::Vector3d line_origin;  ///< LINE: a point of the line.
+  Eigen::Vector3d line_dir;  ///< LINE: line direction.
+  double line_max_distance;  ///< LINE: maximum distance from the line.
 
   // Angle constraint parameters
-  Eigen::Vector3d max_angle;
-  Eigen::Vector3d max_angle_cos;
+  Eigen::Vector3d max_angle;  ///< ANGLE: maximum angle for each axis [rad].
+  Eigen::Vector3d max_angle_cos;  ///< ANGLE: cosine of max_angle (computed by the conversion functions).
 };
 
 
@@ -48,7 +64,14 @@ struct GeometricConstraint
 class PoseConstraintsManager
 {
 public:
+  /**
+   * @brief Constructor with no constraints.
+   */
   PoseConstraintsManager();
+  /**
+   * @brief Constructor.
+   * @param constraints Initial constraints.
+   */
   explicit PoseConstraintsManager(const std::vector<GeometricConstraint> &constraints);
 
   /** define shared pointer PoseConstraintsManager::Ptr*/
@@ -60,6 +83,9 @@ public:
   /** Replace the existing set of constraints. */
   void setConstraints(const std::vector<GeometricConstraint>& constraints);
 
+  /**
+   * @brief Replace the existing set of constraints with those of a ROS message.
+   */
   void setConstraints(const pose_constraints_msgs::msg::GeometricConstraintArray& constraints);
 
 
@@ -102,15 +128,21 @@ protected:
                            double max_distance,
                            double& distance) const;
 
-  std::vector<GeometricConstraint> constraints_;
+  std::vector<GeometricConstraint> constraints_;  ///< Stored constraints.
 };
 
 
 // Conversion function: GeometricConstraint to struct
+/**
+ * @brief Convert a ROS constraint message to a GeometricConstraint (also computes max_angle_cos).
+ */
 GeometricConstraint convertGeometricConstraint(
     const pose_constraints_msgs::msg::GeometricConstraint& msg);
 
 // Conversion function: GeometricConstraintArray to std::vector of structs
+/**
+ * @brief Convert a ROS constraint array message to a list of GeometricConstraint.
+ */
 std::vector<pose_constraints_planner::GeometricConstraint> convertGeometricConstraintArray(
     const pose_constraints_msgs::msg::GeometricConstraintArray& msg_array);
 

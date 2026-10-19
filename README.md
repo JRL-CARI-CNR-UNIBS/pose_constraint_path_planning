@@ -211,3 +211,9 @@ You can add or remove constraints by editing `test_solver.yaml`
 7. Added constraints checking **after** the tree extention
 8. Added action client to simualte the trajectory
 9. Automated testing and results log to csv
+
+## Tutorial and API documentation
+
+- [docs/TUTORIAL.md](docs/TUTORIAL.md): how the planner works, how to define the constraints, and how to send a `PlanWithConstraints` request from Python.
+- [docs/API.md](docs/API.md): API reference of the classes, functions and scripts (generated from the Doxygen comments).
+- The code is documented with Doxygen: run `doxygen Doxyfile` in the repository folder and open `doxygen/html/index.html`.

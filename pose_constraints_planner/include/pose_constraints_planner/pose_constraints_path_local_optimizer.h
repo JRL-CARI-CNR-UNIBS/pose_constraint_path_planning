@@ -1,3 +1,7 @@
+/**
+ * @file pose_constraints_path_local_optimizer.h
+ * @brief Path local optimizer (warp and simplify) that preserves the pose constraints.
+ */
 #pragma once
 /*
 Copyright (c) 2024, Manuel Beschi and Cesare Tonola, JRL-CARI CNR-STIIMA/UNIBS,
@@ -47,10 +51,22 @@ namespace pose_constraints_planner
   class PoseConstrainedPathLocalOptimizer : public PathLocalOptimizer
   {
   protected:
+    /**
+     * @brief Move the node between connections @p connection_idx-1 and @p connection_idx along
+     * @p direction, looking by bisection for the position that reduces the cost while keeping the
+     * connections collision-free and compliant with the pose constraints.
+     * @param connection_idx Index of the second connection (> 0).
+     * @param center Starting point.
+     * @param direction Search direction.
+     * @param min_step_size Bisection stops when the interval is smaller than this.
+     * @param max_distance Upper bound of the interval.
+     * @param min_distance Lower bound of the interval.
+     * @return True if the path was improved.
+     */
     bool bisection(const size_t& connection_idx, const Eigen::VectorXd& center, const Eigen::VectorXd& direction,
                    const double min_step_size, double max_distance, double min_distance);
 
-    /* @brief Check if a connection satisfies pose constraints.
+    /** @brief Check if a connection satisfies pose constraints.
      *
      * This function checks if the given connection satisfies the pose constraints
      * defined in the PoseConstraintsManager. It evaluates the connection's
@@ -62,7 +78,7 @@ namespace pose_constraints_planner
      */
     bool checkConnectionSatisfiesPoseConstraints(const ConnectionPtr& connection);
 
-    /* @brief Check if the connection between two nodes satisfies pose constraints.
+    /** @brief Check if the connection between two nodes satisfies pose constraints.
      *
      * This function checks if the connection between two nodes satisfies the pose
      * constraints defined in the PoseConstraintsManager. It evaluates the
@@ -76,7 +92,7 @@ namespace pose_constraints_planner
      */
     bool checkConnectionSatisfiesPoseConstraints(const NodePtr& n1, const NodePtr& n2);
 
-    /* @brief Check if the connection between two configurations satisfies pose constraints.
+    /** @brief Check if the connection between two configurations satisfies pose constraints.
      *
      * This function checks if the connection between two configurations satisfies
      * the pose constraints defined in the PoseConstraintsManager. It evaluates
@@ -99,6 +115,17 @@ namespace pose_constraints_planner
 
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    /**
+     * @brief Constructor.
+     * @param checker Collision checker.
+     * @param metrics Metrics.
+     * @param logger Logger.
+     * @param ik_solver IK solver, used for the forward kinematics.
+     * @param T_w_b Pose of the robot base in the world frame.
+     * @param T_f_t Pose of the tool in the flange frame.
+     * @param T_w_start Tool pose of the start configuration (reference of ANGLE constraints).
+     * @param pose_constraints_manager Constraints to preserve.
+     */
     PoseConstrainedPathLocalOptimizer(const CollisionCheckerPtr& checker, const MetricsPtr& metrics,
                        const cnr_logger::TraceLoggerPtr& logger,
                        const std::shared_ptr<ik_solver::IkSolver> ik_solver,
@@ -110,6 +137,11 @@ namespace pose_constraints_planner
 
     using Ptr = std::shared_ptr<PoseConstrainedPathLocalOptimizer>;
 
+    /**
+     * @brief Read the parameters @c simplify_max_conn_length (0.1), @c warp_min_conn_length (0.01)
+     * and @c warp_min_step_size (0.01), plus those of PathOptimizerBase.
+     * @param param_ns Parameter namespace.
+     */
     virtual void config(const std::string& param_ns) override;
 
 
