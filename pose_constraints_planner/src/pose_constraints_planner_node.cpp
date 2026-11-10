@@ -67,6 +67,7 @@
 
 // IK solver
 #include "ik_solver/internal/ik_solver_node.ros2.hpp"
+#include <ik_solver/ros_params.hpp>
 
 
 // Planner
@@ -314,18 +315,15 @@ int main(int argc, char** argv)
     auto ik_solver = ik_loader.createSharedInstance("ik_solver/Ur10eIkSolver");
     ik_solver->setBuffer(tf_buffer);
 
-    const std::string ik_plugin_name = "/ur_ik_solver";
-    std::string param_what;
+    // ik_solver parameters: node parameters under "ur_ik_solver." (config/ik_params_sharework.yaml)
+    const std::string ik_prefix = "ur_ik_solver";
+    ik_solver::ParamMap ik_params = ik_solver::paramsFromNode(node, ik_prefix);
+    ik_params["robot_description"] = robot_description;
+    ik_solver->setLogger(std::make_shared<ik_solver::RclcppLogger>(node->get_logger().get_child("ik_solver")));
 
-    if (!cnr::param::set(ik_plugin_name + std::string("/robot_description"), robot_description, param_what))
+    if (!ik_solver->config(ik_params))
     {
-      RCLCPP_ERROR_STREAM(node->get_logger(),
-                          "Cannot set cnr::param(" << ik_plugin_name << "/robot_description) because: " << param_what);
-    }
-
-    if (!ik_solver->config(ik_plugin_name))
-    {
-      RCLCPP_ERROR(node->get_logger(), "Unable to configure ik_solver at ns '%s'", ik_plugin_name.c_str());
+      RCLCPP_ERROR(node->get_logger(), "Unable to configure ik_solver with the parameters under '%s.'", ik_prefix.c_str());
       return 1;
     }
 

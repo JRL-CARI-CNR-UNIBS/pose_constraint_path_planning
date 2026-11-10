@@ -441,7 +441,7 @@ define shared pointer `PoseConstraintsPlanner::Ptr`
 ##### `PoseConstraintsPlanner`
 
 ```cpp
-PoseConstraintsPlanner(rclcpp::Node::SharedPtr node, graph::core::CollisionCheckerPtr collision_checker, std::shared_ptr< ik_solver::IkSolver > ik_solver, graph::core::SamplerPtr sampler, graph::core::MetricsPtr metrics, cnr_logger::TraceLoggerPtr logger_ptr, graph::display::DisplayPtr display, std::string world_frame="world", std::string tool_frame="ur10_tool0")
+PoseConstraintsPlanner(rclcpp::Node::SharedPtr node, graph::core::CollisionCheckerPtr collision_checker, std::shared_ptr< ik_solver::IkSolver > ik_solver, graph::core::SamplerPtr sampler, graph::core::MetricsPtr metrics, graph::core::LoggerPtr logger_ptr, graph::display::DisplayPtr display, std::string world_frame="world", std::string tool_frame="ur10_tool0")
 ```
 
 Constructor.

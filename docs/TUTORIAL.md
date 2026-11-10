@@ -54,9 +54,9 @@ To use another robot, change these values in the node.
    ros2 launch pose_constraints_planner pose_constraint_solver.launch.py
    ```
 
-   The launch file loads `config/ik_params_sharework.yaml` into `cnr_param` (for ik_solver), starts
-   the constraint visualizer, and after 3 s starts `pose_constraints_planner_node` with the ROS 2
-   parameters in `config/solver_config.yaml`.
+   The launch file starts the constraint visualizer and, after 3 s, `pose_constraints_planner_node`
+   with the ROS 2 parameters in `config/solver_config.yaml` and `config/ik_params_sharework.yaml`
+   (ik_solver parameters, under the prefix `ur_ik_solver.`).
 
 The main parameters in `config/solver_config.yaml` (node parameters under the prefix `solver_config.`) are:
 

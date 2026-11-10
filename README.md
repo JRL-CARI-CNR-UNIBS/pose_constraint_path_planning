@@ -59,9 +59,6 @@ Navigate to the `src` directory of your workspace and clone the required reposit
 
 ```bash
 git clone -b modern_cmake https://github.com/JRL-CARI-CNR-UNIBS/cnr_class_loader.git
-git clone https://github.com/CNR-STIIMA-IRAS/cnr_logger.git
-git clone https://github.com/CNR-STIIMA-IRAS/cnr_param.git
-git clone https://github.com/CNR-STIIMA-IRAS/cnr_yaml.git
 
 git clone https://github.com/JRL-CARI-CNR-UNIBS/graph_core.git
 
@@ -97,35 +94,7 @@ ulimit -v 4000000
 Build the workspace with the following command:
 
 ```bash
-colcon build --symlink-install --cmake-args -DUSE_ROS1=False
-```
-
-## Environment Variables
-
-You can set the required environment variables manually in each terminal session or add them to your `.bashrc`.
-
-```bash
-export CNR_PARAM_ROOT_DIRECTORY="/tmp/cnr_param"
-```
-
-If not present, you need to create a `default_logger.yaml` file with the following content
-
-```yaml
-appenders: ['screen']                             # Mandatory
-                                                  # A vector od dimension 1 or 2, where you can select if the output will be streamed to file, to screen or to both
-                                                  # (the order in the vector is not important)
-
-levels: ['debug']                                   # Optional
-                                                  # A vector where you can select the verbosity level for each appender.
-                                                  # If not present, or if the size of the vector is different from the dimension of the appenders,
-                                                  # the default value is superimposed.
-                                                  # Default: 'debug' for all the appenders
-```
-
-You need to point to the `default_logger.yaml` file in an environment variable
-
-```bash
-export IK_SOLVER_LOGGER_CONFIG_PATH=~/ros2_ws/install/ik_solver_test/share/ik_solver_test/config/default_logger.yaml
+colcon build --symlink-install
 ```
 
 ## Execution

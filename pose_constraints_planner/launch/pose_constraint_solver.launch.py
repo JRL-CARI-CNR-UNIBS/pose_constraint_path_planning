@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, TimerAction, DeclareLaunchArgument
+from launch.actions import TimerAction, DeclareLaunchArgument
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -18,7 +18,7 @@ def generate_launch_description():
     )
 
 
-    # --- Parameters (solver_config.yaml: ROS 2 parameters; ik_params: cnr_param, for ik_solver) ---
+    # --- Parameters (ROS 2 parameter files of the node) ---
     test_solver_param_file_path = PathJoinSubstitution([
         pose_constraints_planner_dir,
         'config',
@@ -31,10 +31,6 @@ def generate_launch_description():
         "ik_params_sharework.yaml"
     ])
 
-    ik_params = ExecuteProcess(
-        cmd=['cnr_param_server', '-p', ik_param_file_path],
-        output='screen'
-    )
     constraint_visualizer = Node(
         package='pose_constraints_planner',
         executable='geometric_constraints_visualizer.py',
@@ -46,13 +42,12 @@ def generate_launch_description():
         package='pose_constraints_planner',
         executable='pose_constraints_planner_node',
         output='screen',
-        parameters=[test_solver_param_file_path]
+        parameters=[test_solver_param_file_path, ik_param_file_path]
     )
 
     # --- Add delays between launches ---
     return LaunchDescription([
         solver_config_file_arg,
-        ik_params,
         constraint_visualizer,
         TimerAction(period=3.0, actions=[planner]),
     ])
