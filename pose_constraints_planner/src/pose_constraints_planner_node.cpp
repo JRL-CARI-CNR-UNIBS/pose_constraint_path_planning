@@ -23,7 +23,6 @@
 // - joint_names_map[group_name] = active joint names (stable order for that group)
 // - a single action server instance kept alive
 
-#include <ament_index_cpp/get_package_share_directory.hpp>
 
 // ROS
 #include <rclcpp/rclcpp.hpp>
@@ -72,6 +71,7 @@
 
 // Planner
 #include <pose_constraints_planner/pose_constraints_planner.hpp>
+#include <pose_constraints_planner/graph_core_ros.hpp>
 #include <pose_constraints_planner/plan_with_constraints_action_server.hpp>
 
 // Action + msgs
@@ -175,22 +175,13 @@ int main(int argc, char** argv)
   auto tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
   (void)tf_listener;
 
-  // 3) Logger
-  const std::string package_name = "pose_constraints_planner";
-  const std::string package_path = ament_index_cpp::get_package_share_directory(package_name);
-  if (package_path.empty())
-  {
-    RCLCPP_ERROR_STREAM(node->get_logger(), "Failed to get path for package '" << package_name << "'");
-    return 1;
-  }
+  // 3) Logger and parameters
+  // graph_core messages go to the child logger "pose_constraints_planner.graph_core".
+  graph::core::LoggerPtr logger =
+      std::make_shared<pose_constraints_planner::RclcppGraphLogger>(node->get_logger().get_child("graph_core"));
 
-  const std::string logger_file = package_path + "/config/logger_param.yaml";
-  cnr_logger::TraceLoggerPtr logger =
-      std::make_shared<cnr_logger::TraceLogger>("pose_constraints_planner", logger_file);
-
-  // Namespaces used by your existing params
-  const std::string param_ns1 = "/" + package_name;
-  const std::string param_ns2 = param_ns1 + "/solver_config";
+  // graph_core, plugin and optimizer parameters: node parameters under "solver_config." (config/solver_config.yaml)
+  const graph::core::ParamMap solver_params = pose_constraints_planner::graphParamsFromNode(node, "solver_config");
 
   // 4) Robot model + planning scene
   robot_model_loader::RobotModelLoader robot_model_loader(node, "robot_description");
@@ -230,7 +221,7 @@ int main(int argc, char** argv)
   // 6) Plugin loader: load libraries
   cnr_class_loader::MultiLibraryClassLoader loader(false);
   std::vector<std::string> libraries;
-  if (!graph::core::get_param(logger, param_ns2, "libraries", libraries))
+  if (!graph::core::get_param(logger, solver_params, "libraries", libraries))
     return 1;
 
   for (const auto& lib : libraries)
@@ -287,18 +278,18 @@ int main(int argc, char** argv)
 
     // Collision checker plugin
     std::string checker_plugin_name;
-    graph::core::get_param(logger, param_ns2, "checker_plugin", checker_plugin_name,
+    graph::core::get_param(logger, solver_params, "checker_plugin", checker_plugin_name,
                           std::string("graph::ros1::ParallelMoveitCollisionCheckerPlugin"));
 
     RCLCPP_INFO_STREAM(node->get_logger(), "Loading checker: " << checker_plugin_name);
     auto checker_plugin =
         loader.createInstance<graph::collision_check::MoveitCollisionCheckerBasePlugin>(checker_plugin_name);
-    checker_plugin->init(param_ns2, planning_scene, logger);
+    checker_plugin->init(solver_params, planning_scene, logger);
     graph::core::CollisionCheckerPtr checker = checker_plugin->getCollisionChecker();
 
     // Sampler plugin
     std::string sampler_plugin_name;
-    graph::core::get_param(logger, param_ns2, "sampler_plugin", sampler_plugin_name,
+    graph::core::get_param(logger, solver_params, "sampler_plugin", sampler_plugin_name,
                           std::string("graph::core::InformedSamplerPlugin"));
 
     RCLCPP_INFO_STREAM(node->get_logger(), "Loading sampler: " << sampler_plugin_name);
@@ -306,17 +297,17 @@ int main(int argc, char** argv)
 
     Eigen::VectorXd scale(dof);
     scale.setOnes();
-    sampler_plugin->init(param_ns2, lb, ub, lb, ub, scale, logger);
+    sampler_plugin->init(solver_params, lb, ub, lb, ub, scale, logger);
     graph::core::SamplerPtr sampler = sampler_plugin->getSampler();
 
     // Metrics plugin
     std::string metrics_plugin_name;
-    graph::core::get_param(logger, param_ns2, "metrics_plugin", metrics_plugin_name,
+    graph::core::get_param(logger, solver_params, "metrics_plugin", metrics_plugin_name,
                           std::string("graph::core::EuclideanMetricsPlugin"));
 
     RCLCPP_INFO_STREAM(node->get_logger(), "Loading metrics: " << metrics_plugin_name);
     auto metrics_plugin = loader.createInstance<graph::core::MetricsBasePlugin>(metrics_plugin_name);
-    metrics_plugin->init(param_ns2, logger);
+    metrics_plugin->init(solver_params, logger);
     graph::core::MetricsPtr metrics = metrics_plugin->getMetrics();
 
     // IK solver
@@ -353,7 +344,7 @@ int main(int argc, char** argv)
 	pose_constraints_planner::PoseConstrainedPathLocalOptimizer::Ptr local_optimizer;
 
 	bool use_local_optimizer = false;
-	graph::core::get_param(logger, param_ns2, "use_local_optimizer", use_local_optimizer, false);
+	graph::core::get_param(logger, solver_params, "use_local_optimizer", use_local_optimizer, false);
 
 	if (use_local_optimizer)
 	{
@@ -361,7 +352,7 @@ int main(int argc, char** argv)
         std::make_shared<pose_constraints_planner::PoseConstrainedPathLocalOptimizer>(
             checker, metrics, logger, ik_solver,
             planner->getWorldToBaseTransform(), planner->getFlangeToToolPose(), planner->getStartPose(), pcm);
-		local_optimizer->config(param_ns2);
+		local_optimizer->config(solver_params);
 	}
 
 

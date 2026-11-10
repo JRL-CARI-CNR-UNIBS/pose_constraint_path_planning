@@ -18,16 +18,12 @@ def generate_launch_description():
     )
 
 
-    # --- Param servers ---
+    # --- Parameters (solver_config.yaml: ROS 2 parameters; ik_params: cnr_param, for ik_solver) ---
     test_solver_param_file_path = PathJoinSubstitution([
         pose_constraints_planner_dir,
         'config',
         "solver_config.yaml"
     ])
-    test_solver_params = ExecuteProcess(
-        cmd=['cnr_param_server', '-p', test_solver_param_file_path],
-        output='screen'
-    )
 
     ik_param_file_path = PathJoinSubstitution([
         pose_constraints_planner_dir,
@@ -50,13 +46,12 @@ def generate_launch_description():
         package='pose_constraints_planner',
         executable='pose_constraints_planner_node',
         output='screen',
-        parameters=[]
+        parameters=[test_solver_param_file_path]
     )
 
     # --- Add delays between launches ---
     return LaunchDescription([
         solver_config_file_arg,
-        test_solver_params,
         ik_params,
         constraint_visualizer,
         TimerAction(period=3.0, actions=[planner]),

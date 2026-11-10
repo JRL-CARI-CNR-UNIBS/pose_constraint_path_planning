@@ -54,26 +54,28 @@ To use another robot, change these values in the node.
    ros2 launch pose_constraints_planner pose_constraint_solver.launch.py
    ```
 
-   The launch file loads `config/solver_config.yaml` and `config/ik_params_sharework.yaml` into
-   `cnr_param`, starts the constraint visualizer, and after 3 s starts `pose_constraints_planner_node`.
+   The launch file loads `config/ik_params_sharework.yaml` into `cnr_param` (for ik_solver), starts
+   the constraint visualizer, and after 3 s starts `pose_constraints_planner_node` with the ROS 2
+   parameters in `config/solver_config.yaml`.
 
-The main parameters in `config/solver_config.yaml` are:
+The main parameters in `config/solver_config.yaml` (node parameters under the prefix `solver_config.`) are:
 
 ```yaml
-pose_constraints_planner:
-  solver_config:
-    max_distance: 1.0          # tree extension step (smaller = constraints checked more densely)
-    extend: true
-    goal_bias: 0.1             # probability of trying to connect to the goal
-    checker_resolution: 0.01   # collision checking step along connections
-    libraries: ["libgraph_core.so", "libmoveit_collision_checker.so"]
-    sampler_plugin: graph::core::InformedSamplerPlugin
-    metrics_plugin: graph::core::EuclideanMetricsPlugin
-    checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin
-    use_local_optimizer: true  # shorten the path, keeping the constraints
-    simplify_max_conn_length: 0.5
-    warp_min_conn_length: 0.01
-    warp_min_step_size: 0.01
+/**:
+  ros__parameters:
+    solver_config:
+      max_distance: 1.0          # tree extension step (smaller = constraints checked more densely)
+      extend: true
+      goal_bias: 0.1             # probability of trying to connect to the goal
+      checker_resolution: 0.01   # collision checking step along connections
+      libraries: ["libgraph_core.so", "libmoveit_collision_checker.so"]
+      sampler_plugin: graph::core::InformedSamplerPlugin
+      metrics_plugin: graph::core::EuclideanMetricsPlugin
+      checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin
+      use_local_optimizer: true  # shorten the path, keeping the constraints
+      simplify_max_conn_length: 0.5
+      warp_min_conn_length: 0.01
+      warp_min_step_size: 0.01
 ```
 
 ## 4. Define the constraints

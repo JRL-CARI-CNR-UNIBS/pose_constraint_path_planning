@@ -275,7 +275,7 @@ using pose_constraints_planner::PoseConstrainedPathLocalOptimizer::Ptr = std::sh
 ##### `PoseConstrainedPathLocalOptimizer`
 
 ```cpp
-EIGEN_MAKE_ALIGNED_OPERATOR_NEW PoseConstrainedPathLocalOptimizer(const CollisionCheckerPtr &checker, const MetricsPtr &metrics, const cnr_logger::TraceLoggerPtr &logger, const std::shared_ptr< ik_solver::IkSolver > ik_solver, const Eigen::Affine3d &T_w_b, const Eigen::Affine3d &T_f_t, const Eigen::Affine3d &T_w_start, const pose_constraints_planner::PoseConstraintsManager::Ptr &pose_constraints_manager)
+EIGEN_MAKE_ALIGNED_OPERATOR_NEW PoseConstrainedPathLocalOptimizer(const CollisionCheckerPtr &checker, const MetricsPtr &metrics, const graph::core::LoggerPtr &logger, const std::shared_ptr< ik_solver::IkSolver > ik_solver, const Eigen::Affine3d &T_w_b, const Eigen::Affine3d &T_f_t, const Eigen::Affine3d &T_w_start, const pose_constraints_planner::PoseConstraintsManager::Ptr &pose_constraints_manager)
 ```
 
 Constructor.

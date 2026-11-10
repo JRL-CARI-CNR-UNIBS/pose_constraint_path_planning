@@ -5,7 +5,7 @@
 namespace pose_constraints_planner
 {
 
-  PoseConstraintsPlanner::PoseConstraintsPlanner(rclcpp::Node::SharedPtr node, graph::core::CollisionCheckerPtr collision_checker, std::shared_ptr<ik_solver::IkSolver> ik_solver, graph::core::SamplerPtr sampler, graph::core::MetricsPtr metrics, cnr_logger::TraceLoggerPtr logger_ptr, graph::display::DisplayPtr display, std::string world_frame, std::string tool_frame)
+  PoseConstraintsPlanner::PoseConstraintsPlanner(rclcpp::Node::SharedPtr node, graph::core::CollisionCheckerPtr collision_checker, std::shared_ptr<ik_solver::IkSolver> ik_solver, graph::core::SamplerPtr sampler, graph::core::MetricsPtr metrics, graph::core::LoggerPtr logger_ptr, graph::display::DisplayPtr display, std::string world_frame, std::string tool_frame)
     : node_(node),
       ik_solver_(ik_solver),
       checker_(collision_checker),

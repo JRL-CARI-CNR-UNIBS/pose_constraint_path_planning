@@ -31,7 +31,7 @@ namespace pose_constraints_planner
 {
 
 PoseConstrainedPathLocalOptimizer::PoseConstrainedPathLocalOptimizer(const CollisionCheckerPtr& checker, const MetricsPtr& metrics,
-            const cnr_logger::TraceLoggerPtr& logger,
+            const graph::core::LoggerPtr& logger,
             const std::shared_ptr<ik_solver::IkSolver> ik_solver,
             const Eigen::Affine3d& T_w_b,
             const Eigen::Affine3d& T_f_t,
@@ -42,23 +42,23 @@ PoseConstrainedPathLocalOptimizer::PoseConstrainedPathLocalOptimizer(const Colli
 {
   if (!pose_constraints_manager)
   {
-    CNR_ERROR(logger, "PoseConstraintsManager pointer is null.");
+    GC_ERROR(logger, "PoseConstraintsManager pointer is null.");
     throw std::invalid_argument("PoseConstraintsManager pointer is null.");
   }
   if (!ik_solver)
   {
-    CNR_ERROR(logger, "IkSolver pointer is null.");
+    GC_ERROR(logger, "IkSolver pointer is null.");
     throw std::invalid_argument("IkSolver pointer is null.");
   }
   pose_constraints_manager_ = pose_constraints_manager;
 }
 
-void PoseConstrainedPathLocalOptimizer::config(const std::string& param_ns)
+void PoseConstrainedPathLocalOptimizer::config(const graph::core::ParamMap& params)
 {
-  PathOptimizerBase::config(param_ns);
-  get_param(logger_, param_ns_, "simplify_max_conn_length", simplify_max_conn_length_, 0.1);
-  get_param(logger_, param_ns_, "warp_min_conn_length", warp_min_conn_length_, 0.01);
-  get_param(logger_, param_ns_, "warp_min_step_size", warp_min_step_size_, 0.01);
+  PathOptimizerBase::config(params);
+  get_param(logger_, params_, "simplify_max_conn_length", simplify_max_conn_length_, 0.1);
+  get_param(logger_, params_, "warp_min_conn_length", warp_min_conn_length_, 0.01);
+  get_param(logger_, params_, "warp_min_step_size", warp_min_step_size_, 0.01);
 }
 
 bool PoseConstrainedPathLocalOptimizer::bisection(const size_t& connection_idx, const Eigen::VectorXd& center,
@@ -149,12 +149,12 @@ bool PoseConstrainedPathLocalOptimizer::checkConnectionSatisfiesPoseConstraints(
 {
   if (!n1)
   {
-    CNR_ERROR(logger_, "NodePtr n1 is null.");
+    GC_ERROR(logger_, "NodePtr n1 is null.");
     throw std::invalid_argument("NodePtr n1 is null.");
   }
   if (!n2)
   {
-    CNR_ERROR(logger_, "NodePtr n2 is null.");
+    GC_ERROR(logger_, "NodePtr n2 is null.");
     throw std::invalid_argument("NodePtr n2 is null.");
   }
   return checkConnectionSatisfiesPoseConstraints(n1->getConfiguration(), n2->getConfiguration());
@@ -201,7 +201,7 @@ bool PoseConstrainedPathLocalOptimizer::checkConnectionSatisfiesPoseConstraints(
 {
   if (!connection)
   {
-    CNR_ERROR(logger_, "ConnectionPtr is null.");
+    GC_ERROR(logger_, "ConnectionPtr is null.");
     throw std::invalid_argument("ConnectionPtr is null.");
   }
   return checkConnectionSatisfiesPoseConstraints(connection->getParent(), connection->getChild());

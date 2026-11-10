@@ -127,7 +127,7 @@ namespace pose_constraints_planner
      * @param pose_constraints_manager Constraints to preserve.
      */
     PoseConstrainedPathLocalOptimizer(const CollisionCheckerPtr& checker, const MetricsPtr& metrics,
-                       const cnr_logger::TraceLoggerPtr& logger,
+                       const graph::core::LoggerPtr& logger,
                        const std::shared_ptr<ik_solver::IkSolver> ik_solver,
                         const Eigen::Affine3d& T_w_b,
                         const Eigen::Affine3d& T_f_t,
@@ -140,9 +140,9 @@ namespace pose_constraints_planner
     /**
      * @brief Read the parameters @c simplify_max_conn_length (0.1), @c warp_min_conn_length (0.01)
      * and @c warp_min_step_size (0.01), plus those of PathOptimizerBase.
-     * @param param_ns Parameter namespace.
+     * @param params The parameters.
      */
-    virtual void config(const std::string& param_ns) override;
+    virtual void config(const graph::core::ParamMap& params) override;
 
 
     /**

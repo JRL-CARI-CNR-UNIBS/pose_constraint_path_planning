@@ -64,7 +64,7 @@ namespace pose_constraints_planner
                            std::shared_ptr<ik_solver::IkSolver> ik_solver,
                            graph::core::SamplerPtr sampler,
                            graph::core::MetricsPtr metrics,
-                           cnr_logger::TraceLoggerPtr logger_ptr,
+                           graph::core::LoggerPtr logger_ptr,
                            graph::display::DisplayPtr display,
                            std::string world_frame = "world",
                            std::string tool_frame = "ur10_tool0");
@@ -143,7 +143,7 @@ namespace pose_constraints_planner
     rclcpp::Node::SharedPtr node_;
     std::shared_ptr<ik_solver::IkSolver> ik_solver_;
     graph::core::CollisionCheckerPtr checker_;
-    cnr_logger::TraceLoggerPtr logger_;
+    graph::core::LoggerPtr logger_;
     graph::core::SamplerPtr sampler_;
     graph::core::MetricsPtr metrics_;
     unsigned int desired_solutions = 32;
