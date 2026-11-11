@@ -56,6 +56,11 @@ set(ROS_DEPS
     moveit_ros_planning_interface
     pose_constraints_msgs
     )
+# ament_target_dependencies() is removed in recent ROS 2 distros: link the exported targets
+set(ROS_DEPS_TARGETS)
+foreach(dep IN LISTS ROS_DEPS)
+  list(APPEND ROS_DEPS_TARGETS ${${dep}_TARGETS})
+endforeach()
 
 add_library(pose_constraints_planner SHARED
     src/pose_constraints_planner/pose_constraints_manager.cpp
@@ -99,12 +104,7 @@ target_link_libraries(pose_constraints_planner_node PUBLIC
     pose_constraints_msgs::pose_constraints_msgs__rosidl_typesupport_cpp
 )
 
-ament_target_dependencies(pose_constraints_planner_node PUBLIC
-        rclcpp
-        rclcpp_action
-        rosidl_default_runtime
-        moveit_core
-        moveit_ros_planning_interface)
+target_link_libraries(pose_constraints_planner_node PUBLIC ${rclcpp_TARGETS} ${rclcpp_action_TARGETS} ${moveit_core_TARGETS} ${moveit_ros_planning_interface_TARGETS})
 
 
 install(TARGETS
