@@ -246,7 +246,7 @@ int main(int argc, char** argv)
 
   const std::vector<std::string> group_names = kinematic_model->getJointModelGroupNames();
   const std::string world_frame = "world";
-  const std::string tool_frame  = "ur10e_tool0";  // align with your constructor usage
+  const std::string tool_frame  = "open_tip";  // align with your constructor usage
 
   for (const auto& group_name : group_names)
   {

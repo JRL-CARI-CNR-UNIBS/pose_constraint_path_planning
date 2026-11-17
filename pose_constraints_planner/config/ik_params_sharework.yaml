@@ -4,7 +4,7 @@ ur_ik_solver:
   base_frame: ur10e_base_link # base frame of the chain
   flange_frame: ur10e_tool0 # end frame of the chain
 
-  tool_frame: ur10e_tool0 # destination frame of the IK (it should be rigid attached to flange_frame)
+  tool_frame: open_tip # destination frame of the IK (it should be rigid attached to flange_frame)
   desired_solutions: 32 # number of desired solution
   joint_names:
   - ur10e_shoulder_pan_joint

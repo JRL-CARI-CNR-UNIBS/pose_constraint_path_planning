@@ -29,6 +29,7 @@
 
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <trajectory_msgs/msg/joint_trajectory_point.hpp>
+#include <tf2_eigen/tf2_eigen.hpp>
 
 namespace pose_constraints_planner
 {
@@ -386,18 +387,19 @@ private:
     const auto& pc = c.position_constraints.front();
     const auto& oc = c.orientation_constraints.front();
 
-    if (pc.constraint_region.primitive_poses.empty())
-    {
-      err = "position_constraints[0].constraint_region.primitive_poses empty";
-      return false;
-    }
-
+    
     // Build PoseStamped in the constraint frame
     geometry_msgs::msg::PoseStamped pose_in;
     pose_in.header = pc.header;  // frame_id is here
-    pose_in.pose.position = pc.constraint_region.primitive_poses.front().position;
-    pose_in.pose.orientation = oc.orientation;
+    pose_in.pose.position.x = pc.target_point_offset.x;
+    pose_in.pose.position.y = pc.target_point_offset.y;
+    pose_in.pose.position.z = pc.target_point_offset.z;
+    pose_in.pose.orientation.x = oc.orientation.x;
+    pose_in.pose.orientation.y = oc.orientation.y;
+    pose_in.pose.orientation.z = oc.orientation.z;
+    pose_in.pose.orientation.w = oc.orientation.w;
 
+    RCLCPP_INFO_STREAM(rclcpp::get_logger("pose_constraints_pipeline"), "Pose in local frame " << pose_in.header.frame_id << ": " << pose_in.pose.position.x << ", " << pose_in.pose.position.y << ", " << pose_in.pose.position.z << ", quat: " << pose_in.pose.orientation.x << ", " << pose_in.pose.orientation.y << ", " << pose_in.pose.orientation.z << ", " << pose_in.pose.orientation.w);
     if (pose_in.header.frame_id.empty())
     {
       err = "position_constraints[0].header.frame_id empty (cannot TF-transform)";
@@ -421,15 +423,20 @@ private:
     const auto& p = pose_world.pose.position;
     const auto& q = pose_world.pose.orientation;
 
-    Eigen::Quaterniond quat(q.w, q.x, q.y, q.z);
-    if (quat.norm() < 1e-9)
-    {
-      err = "orientation quaternion has near-zero norm after TF";
-      return false;
-    }
-    quat.normalize();
+    tf2::fromMsg(pose_world.pose,out_goal_pose_world);
+    // Eigen::Quaterniond quat(q.w, q.x, q.y, q.z);
+    // if (quat.norm() < 1e-9)
+    // {
+    //   err = "orientation quaternion has near-zero norm after TF";
+    //   return false;
+    // }
+    // quat.normalize();
 
-    out_goal_pose_world = Eigen::Translation3d(Eigen::Vector3d(p.x, p.y, p.z)) * quat;
+    // out_goal_pose_world = Eigen::Translation3d(Eigen::Vector3d(p.x, p.y, p.z)) * quat;
+
+        // print pose in local and word frames:
+    //RCLCPP_INFO_STREAM(rclcpp::get_logger("pose_constraints_pipeline"), "Pose in local frame: " << pose_in.pose);
+    RCLCPP_INFO_STREAM(rclcpp::get_logger("pose_constraints_pipeline"), "Pose in world frame: " << out_goal_pose_world.matrix());
     return true;
   }
 

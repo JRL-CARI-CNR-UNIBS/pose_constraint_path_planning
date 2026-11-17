@@ -32,6 +32,8 @@ namespace pose_constraints_planner
 
     T_b_w = T_w_b.inverse();
     T_t_f = T_f_t.inverse();
+
+    RCLCPP_INFO_STREAM(node_->get_logger(),"PoseConstraintsPlanner TFs: T_w_b=\n"<<T_w_b.matrix()<<"\nT_b_w=\n"<<T_b_w.matrix()<<"\nT_f_t=\n"<<T_f_t.matrix()<<"\nT_t_f=\n"<<T_t_f.matrix());
     pose_constraints_manager_ = std::make_shared<PoseConstraintsManager>();
   }
 
@@ -72,9 +74,14 @@ namespace pose_constraints_planner
 
   bool PoseConstraintsPlanner::setGoalPose(const Eigen::Affine3d &goal_pose)
   {
-    if (!pose_constraints_manager_->checkConstraints(goal_pose,T_w_start))
+    std::stringstream report;
+    if (!pose_constraints_manager_->checkConstraints(goal_pose,T_w_start,&report))
     {
       RCLCPP_ERROR_STREAM(node_->get_logger(),"Goal configuration violates pose constraints.");
+      RCLCPP_ERROR_STREAM(node_->get_logger(),"World<-Goal pose: \n"<<goal_pose.matrix());
+      RCLCPP_ERROR_STREAM(node_->get_logger(),"World<-Start pose: \n"<<T_w_start.matrix());
+      RCLCPP_ERROR_STREAM(node_->get_logger(),"Start<-Goal pose: \n"<<(T_w_start.inverse()*goal_pose).matrix());
+      RCLCPP_ERROR_STREAM(node_->get_logger(),"Constraint report: \n"<<report.str());
       return false;
     }
     goal_pose_ = goal_pose;
@@ -82,12 +89,18 @@ namespace pose_constraints_planner
     // EXAMPLE: compute inverse kinematics
     ik_solver::Configurations seeds;
     goal_configurations_ = ik_solver_->computeIk(goal_pose_,
-                                                 T_w_b,
-                                                 T_f_t,
+                                                 T_b_w,
+                                                 T_t_f,
                                                  seeds,
                                                  desired_solutions,
                                                  min_stall_iterations,
                                                  max_stall_iterations).configurations();
+
+    // print all possible goal configurations:
+    for (const auto& config : goal_configurations_)
+    {
+      RCLCPP_INFO_STREAM(node_->get_logger(), "Goal configuration: " << config.transpose());
+    }
 
     return true;
   }
@@ -246,6 +259,7 @@ namespace pose_constraints_planner
               break;
             }
           }
+
         }
         if (found_solution)
           break;

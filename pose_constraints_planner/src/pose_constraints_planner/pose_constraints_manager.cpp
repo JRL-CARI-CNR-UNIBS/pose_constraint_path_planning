@@ -89,12 +89,15 @@ bool PoseConstraintsManager::checkAngleConstraint(const Eigen::Affine3d& T_1,
                                                  const Eigen::Vector3d& max_angle_cos,
                                                  double& angle_cos) const
 {
+
+  Eigen::Affine3d T_21 = T_2.inverse() * T_1;
   for (int i = 0; i < 3; i++)
   {
-    if (max_angle_cos(i) > -1)  // if max_angle_cos < -1 => no constraint
+
+    if (max_angle_cos(i) > 0.0)  // if max_angle_cos < -1 => no constraint
     {
-      angle_cos = T_1.linear().row(i).dot(T_2.linear().row(i)) /
-                  (T_1.linear().row(i).norm() * T_2.linear().row(i).norm());
+      Eigen::Vector3d v1 = T_21.linear().col(i);
+      angle_cos = v1(i);
 
       if (angle_cos < max_angle_cos(i))  // skip if the angle is too large
       {
@@ -165,9 +168,9 @@ GeometricConstraint convertGeometricConstraint(const pose_constraints_msgs::msg:
   // Angle constraint
   if (constraint.type == pose_constraints_planner::GeometricConstraint::ANGLE) {
     constraint.max_angle = Eigen::Vector3d(msg.max_angle.x, msg.max_angle.y, msg.max_angle.z);
-    constraint.max_angle_cos = Eigen::Vector3d(std::cos(msg.max_angle.x),
-                                               std::cos(msg.max_angle.y),
-                                               std::cos(msg.max_angle.z));
+    constraint.max_angle_cos = Eigen::Vector3d(msg.max_angle.x<0?-1:std::cos(msg.max_angle.x),
+                                               msg.max_angle.y<0?-1:std::cos(msg.max_angle.y),
+                                               msg.max_angle.z<0?-1:std::cos(msg.max_angle.z));
   }
 
   return constraint;
