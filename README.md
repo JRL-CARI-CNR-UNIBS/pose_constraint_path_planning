@@ -1,188 +1,117 @@
 # Pose constrained path planning
 
-## TODOs
+Joint-space path planning in which the **tool pose** satisfies geometric constraints along the whole
+path:
 
-- time cap to planning?
+- **PLANE**: the tool stays on one side of a plane (e.g. above a table);
+- **LINE**: the tool stays within a distance from a line (e.g. along a rail);
+- **ANGLE**: the tool orientation stays within an angle of its start orientation, axis by axis (e.g. to
+  carry a glass of water).
+
+Each constraint can be defined in any TF frame. The planner is the multi-goal MI-RRT\* pipeline of
+[`parallel_multigoal_planner`](https://github.com/JRL-CARI-CNR-UNIBS/parallel_multigoal_planner)
+(alternative joint and Cartesian goals, planning scene from move_group, cancellation, refinement), with
+rejection sampling on the constraints and constraint checks along every edge.
+
+| Package | Content |
+|---|---|
+| [`pose_constraints_planner`](pose_constraints_planner) | library, `pose_constraints_planner_node` (action server), launch files, constraint visualizer, tests and examples |
+
+The messages are in [`pose_constraints_msgs`](https://github.com/JRL-CARI-CNR-UNIBS/pose_constraints_msgs).
+
+## Documentation
+
+- [docs/TUTORIAL.md](docs/TUTORIAL.md): how it works, parameters, constraints and frames, Python and C++
+  examples, tests.
+- [docs/API.md](docs/API.md): API reference of the classes, functions and scripts.
+- [CHANGELOG.rst](pose_constraints_planner/CHANGELOG.rst): release notes.
+- Doxygen: `doxygen Doxyfile` in this folder, then open `doxygen/html/index.html`.
 
 ## Installation
 
-### Dependencies
+Requirements: ROS 2 Jazzy, MoveIt 2 (`sudo apt install ros-jazzy-moveit`), and for the UR examples
+`ros-jazzy-ur`.
 
-Ensure the following dependencies are installed before proceeding:
-
-#### 1. Log4cxx
-
-If not already installed, install Log4cxx:
+Clone the dependencies in the `src` folder of a colcon workspace:
 
 ```bash
-sudo apt-get install liblog4cxx-dev
-```
-
-#### 2. POCO C++ Libraries
-
-Download and install the [POCO C++ Libraries](https://pocoproject.org/index.html).
-
-#### 3. ROS 2 Humble
-
-Install ROS 2 Humble by following the [official installation guide](https://docs.ros.org/en/humble/Installation.html).
-
-#### 4. MoveIt 2 for ROS 2 Humble
-
-Install MoveIt 2 using the following command:
-
-```bash
-sudo apt install ros-humble-moveit
-```
-
-#### 5. Required ROS 2 Package
-
-Install the necessary ROS 2 package:
-
-```bash
-sudo apt install ros-humble-ur
-```
-
-## Create a Workspace
-
-Set up your ROS 2 workspace:
-
-```bash
-mkdir ros2_ws
-cd ros2_ws
-mkdir src
-colcon build
-```
-
-## Clone the Repositories
-
-Navigate to the `src` directory of your workspace and clone the required repositories:
-
-```bash
+cd ~/ros2_ws/src
 git clone -b modern_cmake https://github.com/JRL-CARI-CNR-UNIBS/cnr_class_loader.git
-
-git clone https://github.com/JRL-CARI-CNR-UNIBS/graph_core.git
-
-git clone -b ros2 https://github.com/JRL-CARI-CNR-UNIBS/moveit_collision_checker.git
-git clone -b ros2 https://github.com/JRL-CARI-CNR-UNIBS/cnr_scene_manager.git
-git clone -b ros2 https://github.com/CNR-STIIMA-IRAS/cnr_tf_named_object_loader.git
-
+git clone -b removing_cnr_logger_and_params https://github.com/JRL-CARI-CNR-UNIBS/graph_core.git
+git clone -b removing_cnr_logger_and_params https://github.com/JRL-CARI-CNR-UNIBS/mirrt_star.git
+git clone -b removing_cnr_logger_and_params https://github.com/JRL-CARI-CNR-UNIBS/moveit_collision_checker.git
+git clone -b removing_cnr_logger_and_params https://github.com/JRL-CARI-CNR-UNIBS/parallel_multigoal_planner.git
+git clone https://github.com/JRL-CARI-CNR-UNIBS/parallel_multigoal_planner_msgs.git
 git clone https://github.com/JRL-CARI-CNR-UNIBS/ik_solver.git
 git clone https://github.com/JRL-CARI-CNR-UNIBS/ik_solver_msgs.git
-git clone -b ros2 https://github.com/JRL-CARI-CNR-UNIBS/ur_ik_solver.git
-git clone https://github.com/JRL-CARI-CNR-UNIBS/pose_constraint_path_planning.git
-git clone -b ros2 https://github.com/JRL-CARI-CNR-UNIBS/graph_display.git
+git clone https://github.com/JRL-CARI-CNR-UNIBS/ur_ik_solver.git
+git clone https://github.com/JRL-CARI-CNR-UNIBS/pose_constraints_msgs.git
+git clone -b removing_cnr_logger_and_params https://github.com/JRL-CARI-CNR-UNIBS/pose_constraint_path_planning.git
+# Only for the examples and the integration test (Sharework cell)
+git clone https://github.com/JRL-CARI-CNR-UNIBS/sharework_cell.git
 ```
 
-## Configure Colcon Defaults to avoid using all the cpus to compile
-
-Create the `.colcon` folder and a `defaults.yaml` file with the following content:
+Build:
 
 ```bash
-mkdir -p ~/.colcon
-echo "build:
-  parallel-workers: 1" > ~/.colcon/defaults.yaml
+cd ~/ros2_ws
+rosdep install --from-paths src --ignore-src -y
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
 ```
 
-if colcon uses all the RAM, call ulimit in the shell before compiling, to limit the usage (for example to 4GB):
-
-```bash
-ulimit -v 4000000
-```
-
-## Build the Workspace
-
-Build the workspace with the following command:
-
-```bash
-colcon build --symlink-install
-```
-
-## Execution
-
-### Manual procedure
-
-Use the following commands to launch the necessary components (source ros2_ws/install/setup.bash in each terminal before start, or automatically source it in your `.bashrc` file):
-
-1. **Terminal 1**: Launch the UR robot driver with fake hardware:
-
-   ```bash
-   ros2 launch ur_robot_driver ur10e.launch.py use_fake_hardware:=true robot_ip:=127.0.0.1 activate_joint_controller:=true
-   ```
-
-2. **Terminal 2**: Launch MoveIt configuration for the UR robot:
-
-   ```bash
-   ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur10e use_fake_hardware:=true launch_rviz:=true
-   ```
-
-   here you can add a Marker (add-> marker) with topic /marker_visualization_topic to see the path.
-
-3. **Terminal 3**: Launch the pose constraints planner:
-
-   ```bash
-   ros2 launch pose_constraints_planner test_solver.launch.py
-   ```
-
-This procedure is better to have a more clear control over the nodes.
-
-### Automatic procedure
-
-Use the following commands to launch the test:
-
-1. **Terminal 1**: Launch the UR robot driver and MoveIt configuration:
-
-   ```bash
-   ros2 launch pose_constraints_planner init_test_solver.launch.py
-   ```
-
-2. **Terminal 1**: Launch the pose constraints planner:
-
-   ```bash
-   ros2 launch pose_constraints_planner test_solver.launch.py test_mode:=0 use_sharework:=false
-   ```
-
-   Set `test_mode` and `use_sharework` to enable testing mode and to select the test cell or the sharework cell (the sharework cell must be installed from [Sharework repo](https://github.com/JRL-CARI-CNR-UNIBS/sharework_cell)) parameters. If `test_mode` is set to N > 0 the program will perform the planning N times and print the results in a .csv file in the install folder.
-
-Make sure `rviz_config.rviz` is present in the `config` directory.
+If the build runs out of memory, limit the parallel jobs (`--parallel-workers 1`, or
+`build: parallel-workers: 1` in `~/.colcon/defaults.yaml`).
 
 ## Usage
 
-You can add or remove constraints by editing `test_solver.yaml`
+1. Start the robot and MoveIt, for example the Sharework cell with fake hardware:
 
-```yaml
-   # geometric constraints definition
-    geometric_constraints:
-        # Define a plane constraint at y=0.8 with normal along y-axis
-        -   name: "geometric_constraint_1"
-            type: "plane"
-            origin: [0.0,0.8,0.0]       # point on the plane
-            normal: [0,1,0]             # normal vector of the plane
-        # Define an orientation constraint around z-axis with max angle 0.3 radians
-        -   name: "geometric_constraint_2"
-            type: "orientation"
-            max_angle: [-1.0,-1.0,0.3]  # [x,y,z] max angle in radians around each axis, -1.0 means no constraints
-        # Define a line constraint along x-axis at y=0.0, z=0.5
-        -   name: "geometric_constraint_3"
-            type: "line"
-            max_distance: 0.5          # max distance from the line
-            origin: [0.0,0.45,0.95]    # point on the line
-            direction: [1.0,0.0,0.0]   # line direction vector
+   ```bash
+   ros2 launch sharework_cembre_bringup sharework_cembre_bringup.launch.py fake_ur:=true fake_gripper:=true
+   ```
+
+2. Start the planner (ik_solver node, constraint visualizer, `pose_constraints_planner_node`):
+
+   ```bash
+   ros2 launch pose_constraints_planner pose_constraint_solver.launch.py
+   ```
+
+   Parameters: `config/solver_config.yaml` (planner) and `config/ik_params_sharework.yaml`
+   (in-process ik_solver plugin, used for the forward kinematics).
+
+3. Send a `pose_constraints_msgs/action/PlanWithConstraints` goal to `/plan_with_constraints`:
+
+   ```bash
+   ros2 run pose_constraints_planner plan_example.py
+   ```
+
+### ROS interface of `pose_constraints_planner_node`
+
+| Interface | Type | Description |
+|---|---|---|
+| `/plan_with_constraints` | action `pose_constraints_msgs/PlanWithConstraints` | goal: constraints + MoveIt `MotionPlanRequest` (each `goal_constraints` element is an alternative goal); result: `MotionPlanResponse` + `PlanningInfo` statistics |
+| `/geometry_constraints` | topic `pose_constraints_msgs/GeometricConstraintArray` (published) | constraints of each request, shown in RViz by `geometric_constraints_visualizer.py` |
+| `/get_planning_scene`, `/compute_fk` | services (used) | planning scene from move_group |
+| `<ik_solver_ns>/get_task_redundant_ik_array` | service (used) | IK of the Cartesian goals |
+| TF | (used) | pose of the constraint frames in `world_frame` |
+
+The parameters are listed in the [tutorial](docs/TUTORIAL.md#3-start-the-planner).
+
+## Tests
+
+```bash
+# Unit tests (no ROS graph needed)
+colcon test --packages-select pose_constraints_planner && colcon test-result --verbose
+
+# Integration test: Sharework cell + ik_solver + planner + 15 scenarios, stops when done
+ros2 launch pose_constraints_planner pose_constraints_planner_test.launch.py
 ```
 
-## Changes
+The integration test checks every planned trajectory against the constraints independently of the
+planner (dense interpolation, FK from `/compute_fk`). See the
+[tutorial](docs/TUTORIAL.md#8-tests-and-examples).
 
-1. Added orientation, plane and line constraints
-2. Added contraints checking on start and goal nodes
-3. Added performance monitoring
-4. Added constraint visualization
-5. Automated constraints parsing
-6. Rewrote launch files in Python
-7. Added constraints checking **after** the tree extention
-8. Added action client to simualte the trajectory
-9. Automated testing and results log to csv
+## License
 
-## Tutorial and API documentation
-
-- [docs/TUTORIAL.md](docs/TUTORIAL.md): how the planner works, how to define the constraints, and how to send a `PlanWithConstraints` request from Python.
-- [docs/API.md](docs/API.md): API reference of the classes, functions and scripts (generated from the Doxygen comments).
-- The code is documented with Doxygen: run `doxygen Doxyfile` in the repository folder and open `doxygen/html/index.html`.
+Apache License 2.0, see [LICENSE](LICENSE).

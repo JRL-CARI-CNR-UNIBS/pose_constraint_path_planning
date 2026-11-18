@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+# Copyright 2026 JRL-CARI CNR-STIIMA/UNIBS
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """RViz visualization of the geometric pose constraints.
 
 Subscribes to /geometry_constraints (pose_constraints_msgs/GeometricConstraintArray) and
@@ -163,7 +177,7 @@ class GeometricConstraintsVisualizer(Node):
         marker_id = 0
 
         for c in self._constraints_msg.constraints:
-            frame = c.frame_id if c.frame_id else "world"
+            frame = c.frame_id or self._constraints_msg.header.frame_id or "world"
 
             if c.type == GeometricConstraint.PLANE:
                 m = Marker()

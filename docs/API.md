@@ -10,66 +10,59 @@ It covers the C++ classes and functions and the scripts. The ROS interface of th
 ## Contents
 
 - [`pose_constraints_planner/include/pose_constraints_planner/plan_with_constraints_action_server.hpp`](#pose_constraints_plannerincludepose_constraints_plannerplan_with_constraints_action_serverhpp)
-  - [`pose_constraints_planner::PlanWithConstraintsMuxActionServer`](#class-pose_constraints_plannerplanwithconstraintsmuxactionserver)
+  - [`pose_constraints_planner::PlanWithConstraintsActionServer`](#class-pose_constraints_plannerplanwithconstraintsactionserver)
 - [`pose_constraints_planner/include/pose_constraints_planner/pose_constraints_manager.hpp`](#pose_constraints_plannerincludepose_constraints_plannerpose_constraints_managerhpp)
   - [`pose_constraints_planner::GeometricConstraint`](#struct-pose_constraints_plannergeometricconstraint)
   - [`pose_constraints_planner::PoseConstraintsManager`](#class-pose_constraints_plannerposeconstraintsmanager)
-- [`pose_constraints_planner/include/pose_constraints_planner/pose_constraints_path_local_optimizer.h`](#pose_constraints_plannerincludepose_constraints_plannerpose_constraints_path_local_optimizerh)
-  - [`pose_constraints_planner::PoseConstrainedPathLocalOptimizer`](#class-pose_constraints_plannerposeconstrainedpathlocaloptimizer)
+- [`pose_constraints_planner/include/pose_constraints_planner/pose_constraints_evaluator.hpp`](#pose_constraints_plannerincludepose_constraints_plannerpose_constraints_evaluatorhpp)
+  - [`pose_constraints_planner::PoseConstraintsEvaluator`](#class-pose_constraints_plannerposeconstraintsevaluator)
+- [`pose_constraints_planner/include/pose_constraints_planner/pose_constrained_sampler.hpp`](#pose_constraints_plannerincludepose_constraints_plannerpose_constrained_samplerhpp)
+  - [`pose_constraints_planner::PoseConstrainedSampler`](#class-pose_constraints_plannerposeconstrainedsampler)
+- [`pose_constraints_planner/include/pose_constraints_planner/pose_constrained_collision_checker.hpp`](#pose_constraints_plannerincludepose_constraints_plannerpose_constrained_collision_checkerhpp)
+  - [`pose_constraints_planner::PoseConstrainedCollisionChecker`](#class-pose_constraints_plannerposeconstrainedcollisionchecker)
+- [`pose_constraints_planner/include/pose_constraints_planner/pose_constrained_multigoal_solver.hpp`](#pose_constraints_plannerincludepose_constraints_plannerpose_constrained_multigoal_solverhpp)
+  - [`pose_constraints_planner::ConstrainedSamplingStatistics`](#struct-pose_constraints_plannerconstrainedsamplingstatistics)
+  - [`pose_constraints_planner::PoseConstrainedMultigoalSolver`](#class-pose_constraints_plannerposeconstrainedmultigoalsolver)
 - [`pose_constraints_planner/include/pose_constraints_planner/pose_constraints_planner.hpp`](#pose_constraints_plannerincludepose_constraints_plannerpose_constraints_plannerhpp)
-  - [`pose_constraints_planner::info`](#struct-pose_constraints_plannerinfo)
   - [`pose_constraints_planner::PoseConstraintsPlanner`](#class-pose_constraints_plannerposeconstraintsplanner)
 - [Scripts](#scripts)
+- [Tests](#tests)
 
 ## pose_constraints_planner/include/pose_constraints_planner/plan_with_constraints_action_server.hpp
 
-### class `pose_constraints_planner::PlanWithConstraintsMuxActionServer`
+Action server of pose_constraints_msgs/action/PlanWithConstraints.
 
-Multiplexing action server that dispatches planning requests to a set of `PoseConstraintsPlanner` implementations keyed by group name.
+### class `pose_constraints_planner::PlanWithConstraintsActionServer`
 
-This lightweight server exposes a ROS2 action of type pose_constraints_msgs::action::PlanWithConstraints and selects the appropriate planner at runtime based on the incoming request's MotionPlanRequest.group_name.
+Action server of `pose_constraints_msgs/action/PlanWithConstraints`.
 
-Threading model:
-
-- The action server accepts goals and executes each accepted goal on a detached std::thread.
-- Internally planners are treated as stateful; a single mutex (planner_mtx_) is used to serialize access to planner instances to avoid concurrent state corruption.
+Each accepted goal is executed on its own detached thread by `PoseConstraintsPlanner::planWithConstraints()`: `motion_plan_request.goal_constraints` are alternative goals (multi-goal MI-RRT*), the path satisfies the geometric constraints of the goal, and the result carries the MotionPlanResponse and the PlanningInfo statistics. Cancellation is checked at every planner iteration. The constraints of each goal are also published on `/geometry_constraints` for visualization.
 
 #### Public types
 
-##### `Action`
-
-```cpp
-using pose_constraints_planner::PlanWithConstraintsMuxActionServer::Action = pose_constraints_msgs::action::PlanWithConstraints
-```
-
-##### `GoalHandle`
-
-```cpp
-using pose_constraints_planner::PlanWithConstraintsMuxActionServer::GoalHandle = rclcpp_action::ServerGoalHandle<Action>
-```
+| Type | Definition |
+|---|---|
+| `Action` | `pose_constraints_msgs::action::PlanWithConstraints` |
+| `GoalHandle` | `rclcpp_action::ServerGoalHandle<Action>` |
 
 #### Public functions
 
-##### `PlanWithConstraintsMuxActionServer`
+##### `PlanWithConstraintsActionServer`
 
 ```cpp
-PlanWithConstraintsMuxActionServer(const rclcpp::Node::SharedPtr &node, const std::string &action_name, const std::string &world_frame, const std::shared_ptr< tf2_ros::Buffer > &tf_buffer, const std::map< std::string, pose_constraints_planner::PoseConstraintsPlanner::Ptr > &planners_map, const std::map< std::string, std::vector< std::string > > &joint_names_map, const std::map< std::string, pose_constraints_planner::PoseConstrainedPathLocalOptimizer::Ptr > &local_optimizers_map)
+PlanWithConstraintsActionServer(const rclcpp::Node::SharedPtr &node, const std::string &action_name="/plan_with_constraints")
 ```
 
-Construct a new `PlanWithConstraintsMuxActionServer`.
+Create the planner and start the action server.
 
 **Parameters:**
 
-- `node`: Shared pointer to the rclcpp::Node used for logging and creating the action server
-- `action_name`: Name of the action to create (e.g. "plan_with_constraints")
-- `world_frame`: The world TF frame to which pose goals will be transformed
-- `tf_buffer`: Shared pointer to the tf2_ros::Buffer used for transforms
-- `planners_map`: Map from group_name to `PoseConstraintsPlanner::Ptr`. Owned externally; kept by reference
-- `joint_names_map`: Map from group_name to the ordered list of joint names for that group. Owned externally; kept by reference
+- `node`: Node; it must not be added to an executor yet (the robot model is loaded here).
+- `action_name`: Action name.
 
 **Throws:**
 
-- `std::runtime_error`: if node or tf_buffer is null
+- `std::runtime_error`: if the planner cannot be created.
 
 ## pose_constraints_planner/include/pose_constraints_planner/pose_constraints_manager.hpp
 
@@ -98,6 +91,7 @@ Constraint type (same values as pose_constraints_msgs/GeometricConstraint).
 | Member | Type | Description |
 |---|---|---|
 | `name` | `std::string` | Name, used in reports. |
+| `frame_id` | `std::string` | Frame in which the constraint was defined (informative after `transformConstraint`). |
 | `type` | `ConstraintType` | Constraint type. |
 | `plane_origin` | `Eigen::Vector3d` | PLANE: a point of the plane. |
 | `plane_normal` | `Eigen::Vector3d` | PLANE: normal pointing to the allowed side. |
@@ -106,7 +100,8 @@ Constraint type (same values as pose_constraints_msgs/GeometricConstraint).
 | `line_dir` | `Eigen::Vector3d` | LINE: line direction. |
 | `line_max_distance` | `double` | LINE: maximum distance from the line. |
 | `max_angle` | `Eigen::Vector3d` | ANGLE: maximum angle for each axis [rad]. |
-| `max_angle_cos` | `Eigen::Vector3d` | ANGLE: cosine of max_angle (computed by the conversion functions). |
+| `max_angle_cos` | `Eigen::Vector3d` | ANGLE: cosine of max_angle (computed by the conversion functions; -2 for a free axis, i.e. a negative max_angle or one ≥ π). |
+| `R_ref_world` | `Eigen::Matrix3d` | ANGLE: rotation from the world frame to the frame whose axes are compared (identity: world axes; set by `transformConstraint`). |
 
 ### class `pose_constraints_planner::PoseConstraintsManager`
 
@@ -199,12 +194,12 @@ Read-only access to the current constraints.
 ##### `checkAngleConstraint`
 
 ```cpp
-bool checkAngleConstraint(const Eigen::Affine3d &T_1, const Eigen::Affine3d &T_2, const Eigen::Vector3d &max_angle_cos, double &angle_cos) const
+bool checkAngleConstraint(const Eigen::Affine3d &T_1, const Eigen::Affine3d &T_2, const Eigen::Vector3d &max_angle_cos, const Eigen::Matrix3d &R_ref_world, double &angle_cos) const
 ```
 
 Checks axis-wise maximum angle constraints between two transforms.
 
-Checks if the angle between the corresponding axes of two transformations exceeds the maximum allowed angles.
+Compares, axis by axis, the rows of `R_ref_world * R_1` and `R_ref_world * R_2`, i.e. the deviation measured along the axes of the constraint frame. Axes with `max_angle_cos` < -1 are free.
 
 ##### `checkPlaneConstraint`
 
@@ -248,343 +243,204 @@ Convert a ROS constraint message to a `GeometricConstraint` (also computes max_a
 std::vector< pose_constraints_planner::GeometricConstraint > convertGeometricConstraintArray(const pose_constraints_msgs::msg::GeometricConstraintArray &msg_array)
 ```
 
-Convert a ROS constraint array message to a list of `GeometricConstraint`.
+Convert a ROS constraint array message to a list of `GeometricConstraint`. The frames are copied but not resolved: use `transformConstraint` to express them in the world frame.
 
-## pose_constraints_planner/include/pose_constraints_planner/pose_constraints_path_local_optimizer.h
-
-Path local optimizer (warp and simplify) that preserves the pose constraints.
-
-### class `pose_constraints_planner::PoseConstrainedPathLocalOptimizer`
-
-Inherits from `PathLocalOptimizer`.
-
-Derived class for local path optimization using warping and simplification techniques.
-
-This class inherits from PathLocalOptimizer and provides
-
-#### Public types
-
-##### `Ptr`
+#### `transformConstraint`
 
 ```cpp
-using pose_constraints_planner::PoseConstrainedPathLocalOptimizer::Ptr = std::shared_ptr<PoseConstrainedPathLocalOptimizer>
+GeometricConstraint transformConstraint(const GeometricConstraint &constraint, const Eigen::Affine3d &T_world_frame)
 ```
 
-#### Public functions
+Express a constraint defined in a frame F in the world frame, given the pose `T_world_frame` of F. PLANE and LINE origins are transformed as points, normals and directions are rotated; for ANGLE, `R_ref_world` is composed with the inverse rotation, so the angles are measured along the axes of F.
 
-##### `PoseConstrainedPathLocalOptimizer`
+## pose_constraints_planner/include/pose_constraints_planner/pose_constraints_evaluator.hpp
+
+Checks the geometric constraints on the tool pose of a joint configuration.
+
+### class `pose_constraints_planner::PoseConstraintsEvaluator`
+
+Computes the tool pose of a configuration (forward kinematics of an ik_solver plugin) and checks it with a `PoseConstraintsManager`.
+
+Configurations are given in the planner joint order, which may differ from the order of the IK solver: they are permuted before the forward kinematics. ANGLE constraints are relative to the start tool pose. The object is immutable after construction; it is shared by samplers and collision checkers. Concurrent use requires a thread-safe forward kinematics in the IK solver.
 
 ```cpp
-EIGEN_MAKE_ALIGNED_OPERATOR_NEW PoseConstrainedPathLocalOptimizer(const CollisionCheckerPtr &checker, const MetricsPtr &metrics, const graph::core::LoggerPtr &logger, const std::shared_ptr< ik_solver::IkSolver > ik_solver, const Eigen::Affine3d &T_w_b, const Eigen::Affine3d &T_f_t, const Eigen::Affine3d &T_w_start, const pose_constraints_planner::PoseConstraintsManager::Ptr &pose_constraints_manager)
+PoseConstraintsEvaluator(const std::shared_ptr< ik_solver::IkSolver > &ik_solver, const PoseConstraintsManager::Ptr &constraints, const std::vector< std::string > &planner_joint_names, const Eigen::Affine3d &T_w_b, const Eigen::Affine3d &T_f_t, const Eigen::VectorXd &start_q)
 ```
-
-Constructor.
 
 **Parameters:**
 
-- `checker`: Collision checker.
-- `metrics`: Metrics.
-- `logger`: Logger.
 - `ik_solver`: IK solver, used for the forward kinematics.
+- `constraints`: Geometric constraints (all quantities in the world frame).
+- `planner_joint_names`: Joint order of the configurations given to the evaluator.
 - `T_w_b`: Pose of the robot base in the world frame.
 - `T_f_t`: Pose of the tool in the flange frame.
-- `T_w_start`: Tool pose of the start configuration (reference of ANGLE constraints).
-- `pose_constraints_manager`: Constraints to preserve.
+- `start_q`: Start configuration (planner joint order): its tool pose is the reference of ANGLE constraints.
 
-##### `config`
+**Throws:** `std::invalid_argument` if a pointer is null or the joints of the IK solver are not all in `planner_joint_names`.
 
-```cpp
-virtual void config(const std::string &param_ns) override
-```
+| Function | Description |
+|---|---|
+| `Eigen::Affine3d toolPose(const Eigen::VectorXd &q) const` | Tool pose of `q` (planner joint order) in the world frame. |
+| `bool satisfies(const Eigen::VectorXd &q, std::stringstream *report=nullptr) const` | True if the tool pose of `q` satisfies all the constraints. |
+| `const Eigen::Affine3d& startPose() const` | Tool pose of the start configuration in the world frame. |
+| `const PoseConstraintsManager::Ptr& constraints() const` | The constraints. |
 
-Read the parameters `simplify_max_conn_length` (0.1), `warp_min_conn_length` (0.01) and `warp_min_step_size` (0.01), plus those of PathOptimizerBase.
+## pose_constraints_planner/include/pose_constraints_planner/pose_constrained_sampler.hpp
 
-**Parameters:**
+graph_core sampler that returns only configurations whose tool pose satisfies the geometric constraints.
 
-- `param_ns`: Parameter namespace.
+### class `pose_constraints_planner::PoseConstrainedSampler`
 
-##### `simplify`
+Rejection sampler on the geometric pose constraints, derived from `graph::core::SamplerBase`.
 
-```cpp
-virtual bool simplify(const double &min_conn_length=0.1)
-```
+Wraps another graph_core sampler (uniform, informed, ...): `sample()` draws configurations from it and returns the first one whose tool pose satisfies the constraints of a `PoseConstraintsEvaluator`. The samples are therefore uniformly distributed over the intersection of the wrapped sampler's set and the constrained set.
 
-Simplify the path by skipping nodes.
+If no feasible configuration is found within `max_attempts` draws, `sample()` returns the last (infeasible) draw and `lastSampleFeasible()` returns false: the caller decides what to do.
 
-This method simplifies the path by removing connections shorter than a threshold. If the length of a connection is shorter than 'min_conn_length', the algorithm skips the connection's child by connecting the parent of the previous connection with the current child, if it results in a collision free connection.
+`setCost()`, `collapse()`, `getLB()` and `getUB()` are forwarded to the wrapped sampler. `inBounds()` also checks the constraints (`graph::core::TubeInformedSampler` relies on it to keep its tube samples feasible). `getSpecificVolume()` is the wrapped sampler's value scaled by the measured acceptance rate, an estimate of the volume of the constrained set.
 
-**Parameters:**
-
-- `min_conn_length`: The minimum connection's length threshold for node removal.
-
-**Returns:** True if the path is simplified, false otherwise.
-
-#### Protected functions
-
-##### `bisection`
+`clone()` shares the evaluator with the original: if clones are used by parallel threads, the forward kinematics of the IK solver must be thread-safe.
 
 ```cpp
-bool bisection(const size_t &connection_idx, const Eigen::VectorXd &center, const Eigen::VectorXd &direction, const double min_step_size, double max_distance, double min_distance)
+PoseConstrainedSampler(const graph::core::SamplerPtr &inner, const PoseConstraintsEvaluatorPtr &evaluator, const unsigned int &max_attempts, const graph::core::LoggerPtr &logger)
 ```
 
-Move the node between connections `connection_idx-1` and `connection_idx` along `direction`, looking by bisection for the position that reduces the cost while keeping the connections collision-free and compliant with the pose constraints.
+**Throws:** `std::invalid_argument` if `inner` or `evaluator` is null.
 
-**Parameters:**
+| Function | Description |
+|---|---|
+| `Eigen::VectorXd sample()` | Draw a configuration that satisfies the constraints (see above). |
+| `void setCost(const double &cost)` / `bool collapse()` | Forwarded to the wrapped sampler. |
+| `bool inBounds(const Eigen::VectorXd &q)` | True if `q` is within the wrapped sampler's bounds and satisfies the constraints. |
+| `const Eigen::VectorXd& getLB()` / `getUB()` | Bounds of the wrapped sampler. |
+| `graph::core::SamplerPtr clone()` | Copy with a clone of the wrapped sampler and reset statistics. |
+| `bool lastSampleFeasible() const` | True if the last value returned by `sample()` satisfies the constraints. |
+| `void setMaxAttempts(const unsigned int &)` / `unsigned int getMaxAttempts() const` | Maximum number of draws per call to `sample()`. |
+| `unsigned long getAttempts() const` | Total number of draws. |
+| `unsigned long getRejections() const` | Number of rejected draws. |
+| `unsigned long getFailedSamples() const` | Number of `sample()` calls that returned an infeasible configuration. |
+| `double getRejectTime() const` | Time spent on rejected draws [s]. |
+| `double getSamplingTime() const` | Time spent in `sample()` [s]. |
+| `double getAcceptanceRate() const` | Fraction of accepted draws (1 if nothing has been drawn yet). |
+| `void resetStatistics()` | Reset attempts, rejections, failed samples and times. |
+| `getInnerSampler()`, `getEvaluator()` | The wrapped sampler and the evaluator. |
 
-- `connection_idx`: Index of the second connection (&gt; 0).
-- `center`: Starting point.
-- `direction`: Search direction.
-- `min_step_size`: Bisection stops when the interval is smaller than this.
-- `max_distance`: Upper bound of the interval.
-- `min_distance`: Lower bound of the interval.
+## pose_constraints_planner/include/pose_constraints_planner/pose_constrained_collision_checker.hpp
 
-**Returns:** True if the path was improved.
+Collision checker that also rejects configurations and edges violating the pose constraints.
 
-##### `checkConnectionSatisfiesPoseConstraints`
+### class `pose_constraints_planner::PoseConstrainedCollisionChecker`
+
+Wraps a collision checker and adds the geometric pose constraints, derived from `graph::core::CollisionCheckerBase`.
+
+A configuration is valid if it satisfies the constraints and the wrapped checker accepts it. An edge is valid if the constraints hold at points spaced at most `resolution` (joint-space norm) along it, and the wrapped checker accepts it. The constraints are checked first, since the forward kinematics is cheaper than a collision check; the wrapped checker keeps its own (e.g. parallel) edge checking. With this checker the solver, the goal filtering and any path optimizer enforce the constraints on the whole path, not only on the nodes.
 
 ```cpp
-bool checkConnectionSatisfiesPoseConstraints(const ConnectionPtr &connection)
+PoseConstrainedCollisionChecker(const graph::core::CollisionCheckerPtr &inner, const PoseConstraintsEvaluatorPtr &evaluator, const double &resolution, const graph::core::LoggerPtr &logger)
 ```
 
-Check if a connection satisfies pose constraints.
+**Throws:** `std::invalid_argument` if `inner` or `evaluator` is null, or `resolution` is not positive.
 
-This function checks if the given connection satisfies the pose constraints defined in the `PoseConstraintsManager`. It evaluates the connection's configurations against the specified constraints and returns true if all constraints are satisfied, false otherwise.
+| Function | Description |
+|---|---|
+| `check`, `checkConnection` (3 overloads), `checkConnections`, `checkConnFromConf` | Constraints first, then the wrapped checker. |
+| `graph::core::CollisionCheckerPtr clone()` | Copy with a clone of the wrapped checker (the evaluator is shared). |
+| `bool constraintsHoldAlong(const Eigen::VectorXd &q1, const Eigen::VectorXd &q2, Eigen::VectorXd *last_valid=nullptr) const` | True if the constraints hold along the segment (end points included); `last_valid` gets the last valid checked point. |
+| `unsigned long getConstraintRejections() const` | Number of configurations or edges rejected because of the constraints. |
+| `getInnerChecker()` | The wrapped checker. |
 
-**Parameters:**
+## pose_constraints_planner/include/pose_constraints_planner/pose_constrained_multigoal_solver.hpp
 
-- `connection`: The connection to be checked against pose constraints.
+MI-RRT* (`graph::mirrt_star::MultigoalSolver`) sampling only configurations that satisfy the pose constraints.
 
-**Returns:** True if the connection satisfies all pose constraints, false otherwise.
+### struct `pose_constraints_planner::ConstrainedSamplingStatistics`
 
-##### `checkConnectionSatisfiesPoseConstraints`
+Sampling statistics of the per-goal `PoseConstrainedSampler` instances: `attempts`, `rejections`, `failed_samples`, `reject_time` [s], `sampling_time` [s], and `rejectionRate()`.
+
+### class `pose_constraints_planner::PoseConstrainedMultigoalSolver`
+
+`graph::mirrt_star::MultigoalSolver` whose per-goal samplers draw only configurations that satisfy the geometric pose constraints.
+
+MultigoalSolver creates, for every registered goal, an informed sampler and a tube sampler around the goal's current solution. This class wraps each informed sampler with a `PoseConstrainedSampler` (rejection sampling on the constraints) and rebuilds the tube sampler on top of it, so that both the informed and the tube samples are feasible. Sampling makes the nodes feasible; the edges must be checked with a `PoseConstrainedCollisionChecker`.
 
 ```cpp
-bool checkConnectionSatisfiesPoseConstraints(const NodePtr &n1, const NodePtr &n2)
+PoseConstrainedMultigoalSolver(const graph::core::MetricsPtr &metrics, const graph::core::CollisionCheckerPtr &checker, const graph::core::SamplerPtr &sampler, const graph::core::GoalCostFunctionPtr &goal_cost_fcn, const PoseConstraintsEvaluatorPtr &evaluator, const unsigned int &max_sampling_attempts, const graph::core::LoggerPtr &logger)
 ```
 
-Check if the connection between two nodes satisfies pose constraints.
-
-This function checks if the connection between two nodes satisfies the pose constraints defined in the `PoseConstraintsManager`. It evaluates the configurations of both nodes against the specified constraints and returns true if all constraints are satisfied, false otherwise.
-
-**Parameters:**
-
-- `n1`: The first node of the connection.
-- `n2`: The second node of the connection.
-
-**Returns:** True if the connection between the two nodes satisfies all pose constraints, false otherwise.
-
-##### `checkConnectionSatisfiesPoseConstraints`
-
-```cpp
-bool checkConnectionSatisfiesPoseConstraints(const Eigen::VectorXd &parent_config, const Eigen::VectorXd &child_config)
-```
-
-Check if the connection between two configurations satisfies pose constraints.
-
-This function checks if the connection between two configurations satisfies the pose constraints defined in the `PoseConstraintsManager`. It evaluates both configurations against the specified constraints and returns true if all constraints are satisfied, false otherwise.
-
-**Parameters:**
-
-- `parent_config`: The configuration of the parent node.
-- `child_config`: The configuration of the child node.
-
-**Returns:** True if the connection between the two configurations satisfies all pose constraints, false otherwise.
-
-### Free functions and types
-
-#### `PoseConstrainedPathLocalOptimizerPtr`
-
-```cpp
-typedef std::shared_ptr<PoseConstrainedPathLocalOptimizer> pose_constraints_planner::PoseConstrainedPathLocalOptimizerPtr
-```
+| Function | Description |
+|---|---|
+| `bool addGoal(const graph::core::NodePtr &goal_node, const double &max_time, const double &apple_cost)` | Register a candidate goal (see `MultigoalSolver::addGoal()`) and replace its samplers with constrained ones. |
+| `ConstrainedSamplingStatistics samplingStatistics() const` | Sum of the statistics of all the constrained samplers created so far. |
 
 ## pose_constraints_planner/include/pose_constraints_planner/pose_constraints_planner.hpp
 
-RRT planner whose nodes must satisfy geometric constraints on the tool pose.
-
-### struct `pose_constraints_planner::info`
-
-Statistics of a planning run.
-
-#### Public attributes
-
-| Member | Type | Description |
-|---|---|---|
-| `total_time` | `double` | Total planning time [s]. |
-| `total_iterations` | `int` | Number of RRT iterations. |
-| `total_rejections` | `int` | Samples or extensions rejected because they violate the constraints. |
-| `max_iteration_time` | `double` | Longest iteration [s]. |
-| `min_iteration_time` | `double` | Shortest iteration [s]. |
-| `average_iteration_time` | `double` | Average iteration time [s]. |
-| `total_reject_time` | `double` | Time spent in rejected iterations [s]. |
+Multi-goal MI-RRT* planner whose path must satisfy geometric constraints on the tool pose.
 
 ### class `pose_constraints_planner::PoseConstraintsPlanner`
 
-RRT planner in joint space whose nodes must satisfy geometric constraints on the tool pose.
+Multi-goal planner (`parallel_multigoal_planner::MultigoalPlanningPipeline`, MI-RRT*) with geometric constraints on the tool pose (PLANE, LINE, ANGLE; see `GeometricConstraint`).
 
-The tool pose of each sample is computed with the forward kinematics of the IK solver and checked with a `PoseConstraintsManager` (ANGLE constraints are relative to the start pose). Samples and tree extensions that violate a constraint are rejected. With a goal bias the tree tries to connect to one of the goal configurations.
+For each request the pipeline of `parallel_multigoal_planner::MultigoalPlanningPipeline` is run (planning scene fetched from move_group, IK of the Cartesian goals from the ik_solver node, multiple alternative goals, cancellation, refinement until the utopia threshold) with these changes:
 
-Usage: `setConstraints()`, `setStartConfiguration()`, then `setGoalConfiguration()` or `setGoalPose()` (the goal configurations are computed with the IK solver), then `solve()`.
+- the start configuration must satisfy the constraints (ANGLE constraints are relative to its tool pose);
+- the collision checker is wrapped by a `PoseConstrainedCollisionChecker`, so nodes, edges and goal candidates violating the constraints are rejected;
+- the solver is a `PoseConstrainedMultigoalSolver`, whose per-goal samplers are `PoseConstrainedSampler` (rejection sampling on the constraints);
+- optionally, the solution is shortened by a `graph::core::PathLocalOptimizer` using the constrained checker.
 
-#### Public types
+The tool pose is computed in-process with the forward kinematics of an ik_solver plugin.
 
-##### `Ptr`
+Each constraint is defined in its `frame_id`; if empty, in the `header.frame_id` of the array; if also empty, in `world_frame`. It is expressed in `world_frame` with TF at the start of each request.
 
-```cpp
-using pose_constraints_planner::PoseConstraintsPlanner::Ptr = std::shared_ptr<PoseConstraintsPlanner>
-```
-
-define shared pointer `PoseConstraintsPlanner::Ptr`
+Parameters (besides those of `MultigoalPlanningPipeline`): `world_frame` ("world"), `tf_timeout` (1.0 s, timeout of each TF lookup), `tool_frame` ("": flange frame), `ik_plugin_prefix` ("ur_ik_solver"; plugin `<prefix>.type`), `max_sampling_attempts` (1000, per request), `constraint_resolution` (0.01, per request), `use_local_optimizer` (false, per request; parameters under `local_optimizer.`).
 
 #### Public functions
 
 ##### `PoseConstraintsPlanner`
 
 ```cpp
-PoseConstraintsPlanner(rclcpp::Node::SharedPtr node, graph::core::CollisionCheckerPtr collision_checker, std::shared_ptr< ik_solver::IkSolver > ik_solver, graph::core::SamplerPtr sampler, graph::core::MetricsPtr metrics, graph::core::LoggerPtr logger_ptr, graph::display::DisplayPtr display, std::string world_frame="world", std::string tool_frame="ur10_tool0")
+PoseConstraintsPlanner(const rclcpp::Node::SharedPtr &node, const graph::core::LoggerPtr &logger)
 ```
 
-Constructor.
+Declare the parameters, load the robot model, create the clients and load the ik_solver plugin. The node must not be added to an executor yet.
 
-Reads the world-base and flange-tool transforms from TF.
+**Throws:** `std::runtime_error` if the robot model or the ik_solver plugin cannot be loaded.
+
+##### `planWithConstraints`
+
+```cpp
+parallel_multigoal_planner::PlanningResult planWithConstraints(const pose_constraints_msgs::msg::GeometricConstraintArray &constraints, const moveit_msgs::msg::MotionPlanRequest &req, bool verbose, const FeedbackFcn &feedback, const CancelFcn &is_canceling, pose_constraints_msgs::msg::PlanningInfo &info) const
+```
+
+Plan a motion that satisfies the geometric constraints.
 
 **Parameters:**
 
-- `node`: ROS node, used for logging.
-- `collision_checker`: Collision checker.
-- `ik_solver`: IK solver of the robot (also used for the forward kinematics).
-- `sampler`: Joint-space sampler.
-- `metrics`: Metrics.
-- `logger_ptr`: graph_core logger.
-- `display`: Display used to show the tree and the path in RViz (may be nullptr).
-- `world_frame`: Frame in which the constraints are expressed.
-- `tool_frame`: Tool frame whose pose is constrained.
+- `constraints`: Geometric constraints, each in its frame (see the class description).
+- `req`: Motion plan request; `goal_constraints` are alternative goals (Cartesian XOR joint-space each).
+- `verbose`: Print a summary of the goal set and of the solution.
+- `feedback`: Feedback callback (may be empty).
+- `is_canceling`: Cancellation callback (may be empty).
+- `info`: Planning statistics (output).
 
-##### `setConstraints`
+**Returns:** The outcome; on failure the response carries the error code (`START_STATE_VIOLATES_PATH_CONSTRAINTS` if the start violates the constraints, `FRAME_TRANSFORM_FAILURE` if a frame of the constraints is not available).
 
-```cpp
-void setConstraints(const pose_constraints_msgs::msg::GeometricConstraintArray &constraints)
-```
-
-Set geometric constraints from a GeometricConstraintArray message.
-
-**Parameters:**
-
-- `constraints`: The GeometricConstraintArray message containing the constraints
-
-##### `setStartConfiguration`
+##### `worldFrame`
 
 ```cpp
-bool setStartConfiguration(const Eigen::VectorXd &start_config)
+const std::string& worldFrame() const
 ```
 
-Set the start configuration and compute its pose.
+Planning frame: the constraints are expressed in it.
 
-**Parameters:**
+#### Protected functions
 
-- `start_config`: The start joint configuration
-
-**Returns:** true if the start configuration respects the pose constraints, false otherwise
-
-##### `setGoalConfiguration`
+##### `lookupWorldTransform`
 
 ```cpp
-bool setGoalConfiguration(const Eigen::VectorXd &goal_conf)
+bool lookupWorldTransform(const std::string &frame, Eigen::Affine3d &T_world_frame, std::string &error) const
 ```
 
-Set the goal configuration and compute its pose.
-
-**Parameters:**
-
-- `goal_conf`: The goal joint configuration
-
-**Returns:** true if the goal configuration respects the pose constraints, false otherwise
-
-##### `getConstraintsManager`
-
-```cpp
-PoseConstraintsManager::Ptr getConstraintsManager() const
-```
-
-Get Constraints Manager.
-
-**Returns:** pointer to the `PoseConstraintsManager` instance
-
-##### `setGoalPose`
-
-```cpp
-bool setGoalPose(const Eigen::Affine3d &goal_pose)
-```
-
-Set the goal pose and compute its IK solutions.
-
-**Parameters:**
-
-- `goal_pose`: The goal end-effector pose
-
-**Returns:** true if the goal pose respects the pose constraints, false otherwise
-
-##### `getDisplay`
-
-```cpp
-graph::display::DisplayPtr getDisplay() const
-```
-
-Get Display.
-
-**Returns:** pointer to the Display instance
-
-##### `setLogging`
-
-```cpp
-void setLogging(const bool &enable)
-```
-
-Enable or disable logging.
-
-**Parameters:**
-
-- `enable`: True to enable logging, false to disable
-
-##### `solve`
-
-```cpp
-bool solve(const double &timeout, graph::core::PathPtr &solution, info &planning_info)
-```
-
-Solve the planning problem within a given timeout.
-
-**Parameters:**
-
-- `timeout`: The maximum time allowed for planning (in seconds)
-- `solution`: The resulting path if a solution is found
-- `planning_info`: Statistics of the planning run (times, iterations, rejections)
-
-**Returns:** true if a solution is found, false otherwise
-
-##### `getStartPose`
-
-```cpp
-Eigen::Affine3d getStartPose() const
-```
-
-Tool pose of the start configuration, in the world frame.
-
-##### `getFlangeToToolPose`
-
-```cpp
-Eigen::Affine3d getFlangeToToolPose() const
-```
-
-Pose of the tool in the flange frame.
-
-##### `getWorldToBaseTransform`
-
-```cpp
-Eigen::Affine3d getWorldToBaseTransform() const
-```
-
-Pose of the robot base in the world frame.
+Pose of `frame` in `world_frame` from TF (identity if `frame` is `world_frame`). Returns false, with a message in `error`, if the transform is not available within `tf_timeout`.
 
 ## Scripts
 
@@ -596,3 +452,15 @@ RViz visualization of the geometric pose constraints.
 Subscribes to /geometry_constraints (pose_constraints_msgs/GeometricConstraintArray) and
 publishes planes, lines and angle limits as markers on /geometric_constraints_markers.
 ```
+
+### `pose_constraints_planner/scripts/plan_example.py`
+
+Minimal client of `/plan_with_constraints` for the Sharework cell: two alternative joint goals, a plane and an angle constraint in `world`, a line constraint in `ur10e_base_link`.
+
+### `pose_constraints_planner/scripts/pose_constraints_planner_test.py`
+
+Integration test of the action server. Runs the scenarios of a YAML file (`scenarios_file`, default `config/sharework_test_scenarios.yaml`; `scenarios` selects a subset), checks the error code or the cancellation, and for every successful plan checks that the trajectory goes from the start to a goal and that the constraints hold along it (interpolation every `check_resolution` rad, FK from `/compute_fk`, constraint frames from TF). Exits with code 0 only if all scenarios pass. Other parameters: `action_name`, `group_name`, `world_frame`, `tool_frame`, `allowed_planning_time`, `server_timeout`.
+
+## Tests
+
+`pose_constraints_planner/test/test_pose_constraints.cpp` (gtest, `colcon test`): unit tests of `PoseConstraintsManager`, `transformConstraint`, `PoseConstraintsEvaluator`, `PoseConstrainedSampler`, `PoseConstrainedCollisionChecker` and `PoseConstrainedMultigoalSolver` on a fake 4-joint robot.

@@ -1,27 +1,55 @@
-# ROS 2 parameters of pose_constraints_planner_node: graph_core, plugin and local optimizer
-# parameters under the prefix solver_config. (the ik_solver parameters are loaded with cnr_param_server).
+# ROS 2 parameters of pose_constraints_planner_node (multi-goal MI-RRT* with pose constraints).
+# The parameters marked "per request" are read at every request and can be changed with `ros2 param set`.
 /**:
   ros__parameters:
-    solver_config:
-      group_name: "ur_robot"
-      utopia_tolerance: 0.05 # tolerance wrt best solution
-      extend: true # if true steps towards next point are truncated at max_distance length
-      max_distance: 1.0 # to be used with extend: true
-      use_kdtree: true
-      checker_resolution: 0.01
-      parallel_checker_n_threads: 4
-      goal_bias: 0.1 # defines the probability of sampling the goal configuration
+    # --- parallel_multigoal_planner pipeline ---
+    ik_solver_ns: ur_ik_solver              # namespace of the ik_solver node (IK of the Cartesian goals)
+    planning_scene_service: /get_planning_scene
+    default_allowed_planning_time: 5.0      # [s] used when motion_plan_request.allowed_planning_time <= 0
+    direct_connect_time: 0.2                # [s] direct start-goal connection attempt per goal
+    checker_resolution: 0.01                # [rad] collision-check spacing along an edge
+    checker_threads: 4
+    waypoint_dt_s: 1.0                      # [s] time between trajectory points (no time parametrization)
+    max_refine_time: -1.0                   # per request. < 0: refine until allowed time or utopia; 0: first solution
+    collision_padding: 0.0                  # per request. [m] extra padding of the group links
 
-      libraries: ["libgraph_core.so","libmoveit_collision_checker.so"]
+    # --- pose constraints ---
+    world_frame: world                      # frame of the constraints
+    tool_frame: ur10e_tool0                 # constrained tool frame (empty: flange frame of the IK solver)
+    ik_plugin_prefix: ur_ik_solver          # parameters of the in-process ik_solver plugin (forward kinematics)
+    max_sampling_attempts: 1000             # per request. Max draws of the rejection sampler per sample
+    constraint_resolution: 0.01             # per request. [rad] constraint-check spacing along an edge
 
-      # planner: RRT, BiRRT, RRT*, ANYTIMERRT
-      planner_plugin: graph::core::RRTPlugin
-      sampler_plugin: graph::core::InformedSamplerPlugin
-      metrics_plugin: graph::core::EuclideanMetricsPlugin
-      checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin
-
-      use_local_optimizer: true
-      simplify_max_conn_length: 0.5 # maximum connection length for the simplify step
-      warp_min_conn_length: 0.01 # minimum connection length for the warp step
-      warp_min_step_size: 0.01 # minimum step size for the warp step
+    # --- local optimizer (per request) ---
+    use_local_optimizer: true
+    local_optimizer:
+      simplify_max_conn_length: 0.5         # maximum connection length for the simplify step
+      warp_min_conn_length: 0.01            # minimum connection length for the warp step
+      warp_min_step_size: 0.01              # minimum step size for the warp step
       max_stall_gen: 100
+
+    # --- mirrt* solver (per request) ---
+    mirrt_star:
+      max_distance: 1.0          # [rad] max tree-extension step
+      use_kdtree: true
+      extend: true               # true: extend, false: connect
+      utopia_tolerance: 0.05     # accept a solution within (1 + tol) of the utopia cost
+      rewire_radius: 2.0         # RRT* rewiring radius
+      mixed_strategy: true       # blend tube-informed and plain sampling per goal
+      bidirectional: true        # grow trees from start and from each goal
+      k_nearest: false
+      local_bias: 0.3
+      apple_weight: 10.0
+      tube_radius: 0.3
+      forgetting_factor: 0.01
+
+      # Goal selection (which candidate goal to grow towards)
+      policy_type: MultiArmedBandit
+      policy_name: eGreedy
+      reward_fcn: RelativeImprovement
+      warm_start_reward: false
+      epsilon_coef: 0.2
+      reward_gain: 1.0
+      egreedy_forgetting_factor: 0.0
+      egreedy_reward_forgetting_factor: 0.0
+      epsilon_exp: 1.0

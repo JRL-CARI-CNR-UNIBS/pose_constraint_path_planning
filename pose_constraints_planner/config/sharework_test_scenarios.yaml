@@ -1,0 +1,127 @@
+# Scenarios of pose_constraints_planner_test.py for the Sharework cell (UR10e, group ur_robot).
+#
+# configurations: named joint configurations, in the order of `joint_names`.
+#
+# constraints: named geometric constraints (pose_constraints_msgs/GeometricConstraint)
+#   type       plane | line | angle
+#   frame      frame_id of the constraint (default: empty, i.e. the array header frame or world_frame)
+#   plane:     origin [x, y, z], normal [x, y, z], tolerance (default 0)
+#   line:      origin [x, y, z], direction [x, y, z], max_distance
+#   angle:     max_angle [x, y, z] (negative: axis free)
+#
+# Each scenario:
+#   name                   unique name (select a subset with the `scenarios` parameter)
+#   start                  configuration name (default: home)
+#   goals                  alternative goals: {joint: <configuration>} or {pose_of: <configuration>}
+#                          (Cartesian goal: tool pose of that configuration, in world_frame)
+#   constraints            list of constraint names
+#   header_frame           header.frame_id of the constraint array (default: empty)
+#   expect                 success (default) | canceled | a MoveItErrorCodes name
+#   allowed_planning_time  [s] (default: parameter allowed_planning_time)
+#   cancel_after           [s] cancel the goal after this time
+#
+# In this cell the robot is ceiling-mounted: ur10e_base_link is at z = 2.058 m in world, rotated by
+# 180 deg about x (base z = -world z). Tool heights in world: home 1.367 m, a 1.218 m, c 1.213 m.
+
+joint_names: [ur10e_shoulder_pan_joint, ur10e_shoulder_lift_joint, ur10e_elbow_joint,
+              ur10e_wrist_1_joint, ur10e_wrist_2_joint, ur10e_wrist_3_joint]
+
+configurations:
+  home: [1.5707, -2.4434, 2.4434, -1.5707, 1.5707, 0.0]
+  a: [1.2, -1.8, 1.9, -1.7, 1.57, 0.0]
+  b: [1.9, -1.45, 1.6, -1.6, 1.57, 0.3]
+  c: [0.8, -2.0, 2.0, -1.5, 1.57, -0.3]
+  far_1: [-1.619, -2.363, 2.239, -1.633, 1.703, 0.379]
+  far_2: [-1.657, -2.039, 2.373, -1.575, 1.584, -0.489]
+  hard_1: [-1.343, -1.299, -2.033, -1.367, -1.733, 0.267]
+  hard_2: [-1.259, -1.282, -2.285, -1.475, -1.307, -0.071]
+  hard_3: [-1.67, -1.047, -2.283, -1.667, -1.607, -0.003]
+
+constraints:
+  upright: {type: angle, max_angle: [-1.0, -1.0, 0.35]}          # tool tilt within 0.35 rad
+  tilt: {type: angle, max_angle: [-1.0, -1.0, 0.6]}
+  floor: {type: plane, origin: [0.0, 0.0, 1.15], normal: [0.0, 0.0, 1.0]}   # tool above z = 1.15 m
+  low_floor: {type: plane, origin: [0.0, 0.0, 0.3], normal: [0.0, 0.0, 1.0]}
+  above_start: {type: plane, origin: [0.0, 0.0, 1.67], normal: [0.0, 0.0, 1.0]}  # start below it
+  between: {type: plane, origin: [0.0, 0.0, 1.29], normal: [0.0, 0.0, 1.0]}      # start above, a and c below
+  # Same planes as floor and between, defined in the (ceiling-mounted) base frame
+  floor_in_base: {type: plane, frame: ur10e_base_link, origin: [0.0, 0.0, 0.908], normal: [0.0, 0.0, -1.0]}
+  between_in_base: {type: plane, frame: ur10e_base_link, origin: [0.0, 0.0, 0.768], normal: [0.0, 0.0, -1.0]}
+  # Same as floor_in_base, without frame: uses the header frame of the array
+  floor_base_header: {type: plane, origin: [0.0, 0.0, 0.908], normal: [0.0, 0.0, -1.0]}
+  rail: {type: line, origin: [0.0, 0.0, 1.3], direction: [1.0, 0.0, 0.0], max_distance: 2.0}
+  unknown_frame: {type: plane, frame: no_such_frame, origin: [0.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0]}
+
+scenarios:
+  # --- plans that must succeed (the path is checked against the constraints)
+  - name: unconstrained
+    goals: [{joint: a}, {joint: b}, {joint: c}]
+
+  - name: angle_joint_alternatives
+    goals: [{joint: a}, {joint: b}, {joint: c}]
+    constraints: [upright]
+
+  - name: angle_plane_cartesian
+    goals: [{pose_of: a}, {pose_of: b}]
+    constraints: [upright, floor]
+
+  - name: angle_plane_mixed
+    goals: [{pose_of: a}, {joint: c}]
+    constraints: [upright, floor]
+
+  - name: angle_far_goals
+    goals: [{joint: far_1}, {joint: far_2}]
+    constraints: [tilt]
+    allowed_planning_time: 10.0
+
+  - name: plane_hard_goals            # no direct connection: the trees have to grow
+    goals: [{joint: hard_1}, {joint: hard_2}, {joint: hard_3}]
+    constraints: [low_floor]
+    allowed_planning_time: 10.0
+
+  - name: line_and_angle
+    goals: [{joint: a}, {joint: c}]
+    constraints: [rail, upright]
+
+  # --- frame_id
+  - name: plane_in_base_frame         # same region as `floor`: must succeed
+    goals: [{pose_of: a}, {pose_of: b}]
+    constraints: [upright, floor_in_base]
+
+  - name: plane_in_header_frame       # frame taken from the header of the array
+    goals: [{joint: a}]
+    constraints: [floor_base_header]
+    header_frame: ur10e_base_link
+
+  - name: goal_violates_in_base_frame # same region as `between`: goal a below it
+    goals: [{joint: a}]
+    constraints: [between_in_base]
+    expect: INVALID_GOAL_CONSTRAINTS
+
+  - name: unknown_frame
+    goals: [{joint: a}]
+    constraints: [unknown_frame]
+    expect: FRAME_TRANSFORM_FAILURE
+
+  # --- failures
+  - name: start_violates
+    goals: [{joint: a}]
+    constraints: [above_start]
+    expect: START_STATE_VIOLATES_PATH_CONSTRAINTS
+
+  - name: goal_violates
+    goals: [{joint: a}]
+    constraints: [between]
+    expect: INVALID_GOAL_CONSTRAINTS
+
+  - name: cartesian_goal_violates     # IK solutions discarded by the constraints
+    goals: [{pose_of: c}]
+    constraints: [between]
+    expect: NO_IK_SOLUTION
+
+  - name: cancel
+    goals: [{joint: hard_1}, {joint: hard_2}]
+    constraints: [low_floor]
+    allowed_planning_time: 10.0
+    cancel_after: 0.5
+    expect: canceled

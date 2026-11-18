@@ -1,3 +1,17 @@
+// Copyright 2026 JRL-CARI CNR-STIIMA/UNIBS
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 /**
  * @file pose_constraints_manager.hpp
  * @brief Geometric constraints on the tool pose and their evaluation.
@@ -26,11 +40,16 @@ namespace pose_constraints_planner
  *   must be at least @c plane_tolerance, i.e. the tool stays on the side the normal points to;
  * - @c LINE: the distance of the tool origin from the line must be less than @c line_max_distance;
  * - @c ANGLE: for each axis i (x, y, z), the angle between the i-th rows of the current and of
- *   the start rotation matrices must not exceed component i of @c max_angle. Use a value >= pi to leave an axis free.
+ *   the start rotation matrices of the tool, expressed in the reference frame of the constraint
+ *   (R_ref_tool = @c R_ref_world * R_world_tool), must not exceed component i of @c max_angle.
+ *   A negative value or a value >= pi leaves the axis free.
+ *
+ * A constraint defined in another frame is expressed in the world frame with transformConstraint().
  */
 struct GeometricConstraint
 {
   std::string name;  ///< Name, used in reports.
+  std::string frame_id;  ///< Frame in which the constraint was defined (informative after transformConstraint()).
 
   /**
    * @brief Constraint type (same values as pose_constraints_msgs/GeometricConstraint).
@@ -51,6 +70,7 @@ struct GeometricConstraint
   // Angle constraint parameters
   Eigen::Vector3d max_angle;  ///< ANGLE: maximum angle for each axis [rad].
   Eigen::Vector3d max_angle_cos;  ///< ANGLE: cosine of max_angle (computed by the conversion functions).
+  Eigen::Matrix3d R_ref_world = Eigen::Matrix3d::Identity();  ///< ANGLE: orientation of the world in the reference frame.
 };
 
 
@@ -108,10 +128,11 @@ protected:
   // The following functions are the ones provided in the attached sources,
   // exposed as protected methods as requested.
 
-  /// @brief Checks axis-wise maximum angle constraints between two transforms.
+  /// @brief Checks axis-wise maximum angle constraints between two transforms, in the frame given by R_ref_world.
   bool checkAngleConstraint(const Eigen::Affine3d& T_1,
                             const Eigen::Affine3d& T_2,
                             const Eigen::Vector3d& max_angle_cos,
+                            const Eigen::Matrix3d& R_ref_world,
                             double& angle_cos) const;
 
   /// @brief Checks point-to-plane distance constraint.
@@ -132,9 +153,23 @@ protected:
 };
 
 
+/**
+ * @brief Express a constraint defined in a frame F in the world frame.
+ *
+ * Points are mapped with @p T_world_frame, directions with its rotation; for ANGLE constraints the
+ * reference frame stays F (R_ref_world becomes R_ref_world * R_world_F^T).
+ * @param constraint Constraint whose quantities are expressed in F.
+ * @param T_world_frame Pose of F in the world frame.
+ * @return The same constraint with its quantities expressed in the world frame.
+ */
+GeometricConstraint transformConstraint(const GeometricConstraint& constraint, const Eigen::Affine3d& T_world_frame);
+
 // Conversion function: GeometricConstraint to struct
 /**
  * @brief Convert a ROS constraint message to a GeometricConstraint (also computes max_angle_cos).
+ *
+ * The quantities are copied as they are, in the frame @c msg.frame_id: use transformConstraint()
+ * to express them in the world frame.
  */
 GeometricConstraint convertGeometricConstraint(
     const pose_constraints_msgs::msg::GeometricConstraint& msg);

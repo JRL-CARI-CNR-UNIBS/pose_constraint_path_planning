@@ -1,173 +1,124 @@
+// Copyright 2026 JRL-CARI CNR-STIIMA/UNIBS
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 /**
  * @file pose_constraints_planner.hpp
- * @brief RRT planner whose nodes must satisfy geometric constraints on the tool pose.
+ * @brief Multi-goal MI-RRT* planner whose path must satisfy geometric constraints on the tool pose.
  */
 #pragma once
 
-#include <graph_core/graph/path.h>
-#include <pose_constraints_planner/pose_constraints_manager.hpp>
-// Class loader
-#include <cnr_class_loader/multi_library_class_loader.hpp>
+#include <memory>
+#include <string>
 
-// IK solver
-#include "ik_solver/internal/ik_solver_node.ros2.hpp"
-#include <graph_core/graph/tree.h>
+#include <pluginlib/class_loader.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
-#include <graph_display/graph_display.h>
+#include <parallel_multigoal_planner/multigoal_planning_pipeline.hpp>
 
+#include <pose_constraints_msgs/msg/geometric_constraint_array.hpp>
+#include <pose_constraints_msgs/msg/planning_info.hpp>
+
+#include <pose_constraints_planner/pose_constraints_evaluator.hpp>
 
 namespace pose_constraints_planner
 {
 
-  /**
-   * @brief Statistics of a planning run.
-   */
-  struct info
-  {
-    double total_time;  ///< Total planning time [s].
-    int total_iterations;  ///< Number of RRT iterations.
-    int total_rejections;  ///< Samples or extensions rejected because they violate the constraints.
-    double max_iteration_time;  ///< Longest iteration [s].
-    double min_iteration_time;  ///< Shortest iteration [s].
-    double average_iteration_time;  ///< Average iteration time [s].
-    double total_reject_time;  ///< Time spent in rejected iterations [s].
-  };
+/**
+ * @brief Multi-goal planner (parallel_multigoal_planner pipeline, MI-RRT*) with geometric constraints
+ * on the tool pose (PLANE, LINE, ANGLE; see GeometricConstraint).
+ *
+ * For each request the pipeline of parallel_multigoal_planner::MultigoalPlanningPipeline is run
+ * (planning scene fetched from move_group, IK of the Cartesian goals from the ik_solver node,
+ * multiple alternative goals, cancellation, refinement until the utopia threshold) with these changes:
+ * - the start configuration must satisfy the constraints (ANGLE constraints are relative to its tool pose);
+ * - the collision checker is wrapped by a PoseConstrainedCollisionChecker, so nodes, edges and goal
+ *   candidates violating the constraints are rejected;
+ * - the solver is a PoseConstrainedMultigoalSolver, whose per-goal samplers are PoseConstrainedSampler
+ *   (rejection sampling on the constraints);
+ * - optionally, the solution is shortened by a graph::core::PathLocalOptimizer using the constrained checker.
+ *
+ * The tool pose is computed in-process with the forward kinematics of an ik_solver plugin.
+ *
+ * Parameters (besides those of MultigoalPlanningPipeline):
+ * - @c world_frame ("world"): planning frame of the constraints. Each constraint is defined in its own
+ *   @c frame_id (if empty, in the @c header.frame_id of the array; if also empty, in @c world_frame)
+ *   and is expressed in @c world_frame with TF at the start of each request;
+ * - @c tf_timeout (1.0 s): timeout of each TF lookup;
+ * - @c tool_frame (""): constrained tool frame (empty: the flange frame of the IK solver);
+ * - @c ik_plugin_prefix ("ur_ik_solver"): prefix of the parameters of the in-process ik_solver plugin;
+ *   the plugin is @c <prefix>.type;
+ * - @c max_sampling_attempts (1000): maximum draws per constrained sample (read at every request);
+ * - @c constraint_resolution (0.01): joint-space spacing of the constraint checks along an edge (read at every request);
+ * - @c use_local_optimizer (false): shorten the solution with a PathLocalOptimizer (read at every request);
+ *   its parameters are under @c local_optimizer. (simplify_max_conn_length, warp_min_conn_length,
+ *   warp_min_step_size, max_stall_gen).
+ */
+class PoseConstraintsPlanner : public parallel_multigoal_planner::MultigoalPlanningPipeline
+{
+public:
+  /** define shared pointer PoseConstraintsPlanner::Ptr */
+  using Ptr = std::shared_ptr<PoseConstraintsPlanner>;
+
+  /// Prefix of the node parameters of the local optimizer.
+  static constexpr const char* kLocalOptimizerPrefix = "local_optimizer";
 
   /**
-   * @brief RRT planner in joint space whose nodes must satisfy geometric constraints on the tool pose.
-   *
-   * The tool pose of each sample is computed with the forward kinematics of the IK solver and
-   * checked with a PoseConstraintsManager (ANGLE constraints are relative to the start pose).
-   * Samples and tree extensions that violate a constraint are rejected. With a goal bias the
-   * tree tries to connect to one of the goal configurations.
-   *
-   * Usage: setConstraints(), setStartConfiguration(), then setGoalConfiguration() or
-   * setGoalPose() (the goal configurations are computed with the IK solver), then solve().
+   * @brief Declare the parameters, load the robot model, create the clients and load the ik_solver plugin.
+   * @param node Node; it must not be added to an executor yet (see MultigoalPlanningPipeline).
+   * @param logger graph_core logger.
+   * @throw std::runtime_error if the robot model or the ik_solver plugin cannot be loaded.
    */
-  class PoseConstraintsPlanner
-  {
-  public:
-    /**
-     * @brief Constructor. Reads the world-base and flange-tool transforms from TF.
-     * @param node ROS node, used for logging.
-     * @param collision_checker Collision checker.
-     * @param ik_solver IK solver of the robot (also used for the forward kinematics).
-     * @param sampler Joint-space sampler.
-     * @param metrics Metrics.
-     * @param logger_ptr graph_core logger.
-     * @param display Display used to show the tree and the path in RViz (may be nullptr).
-     * @param world_frame Frame in which the constraints are expressed.
-     * @param tool_frame Tool frame whose pose is constrained.
-     */
-    PoseConstraintsPlanner(rclcpp::Node::SharedPtr node,
-                           graph::core::CollisionCheckerPtr collision_checker,
-                           std::shared_ptr<ik_solver::IkSolver> ik_solver,
-                           graph::core::SamplerPtr sampler,
-                           graph::core::MetricsPtr metrics,
-                           graph::core::LoggerPtr logger_ptr,
-                           graph::display::DisplayPtr display,
-                           std::string world_frame = "world",
-                           std::string tool_frame = "ur10_tool0");
+  PoseConstraintsPlanner(const rclcpp::Node::SharedPtr& node, const graph::core::LoggerPtr& logger);
 
-    /** define shared pointer PoseConstraintsPlanner::Ptr*/
-    using Ptr = std::shared_ptr<PoseConstraintsPlanner>;
+  /**
+   * @brief Plan a motion that satisfies the geometric constraints.
+   * @param constraints Geometric constraints, each in its frame (see the class description).
+   * @param req Motion plan request; goal_constraints are alternative goals (Cartesian XOR joint-space each).
+   * @param verbose Print a summary of the goal set and of the solution.
+   * @param feedback Feedback callback (may be empty).
+   * @param is_canceling Cancellation callback (may be empty).
+   * @param[out] info Planning statistics.
+   * @return The outcome; on failure the response carries the error code
+   * (START_STATE_VIOLATES_PATH_CONSTRAINTS if the start violates the constraints, FRAME_TRANSFORM_FAILURE
+   * if a frame of the constraints is not available).
+   */
+  parallel_multigoal_planner::PlanningResult
+  planWithConstraints(const pose_constraints_msgs::msg::GeometricConstraintArray& constraints,
+                      const moveit_msgs::msg::MotionPlanRequest& req, bool verbose, const FeedbackFcn& feedback,
+                      const CancelFcn& is_canceling, pose_constraints_msgs::msg::PlanningInfo& info) const;
 
-    /** Set geometric constraints from a GeometricConstraintArray message
-     * @param constraints The GeometricConstraintArray message containing the constraints
-     */
-    void setConstraints(const pose_constraints_msgs::msg::GeometricConstraintArray &constraints);
+  /** Frame of the constraints. */
+  const std::string& worldFrame() const { return world_frame_; }
 
-    /** Set the start configuration and compute its pose
-     * @param start_config The start joint configuration
-     * @return true if the start configuration respects the pose constraints, false otherwise
-     */
-    bool setStartConfiguration(const Eigen::VectorXd& start_config);
+protected:
+  /**
+   * @brief Pose of @p frame in @c world_frame from TF.
+   * @param frame Frame.
+   * @param[out] T_world_frame Pose.
+   * @param[out] error Error message.
+   * @return False if the transform is not available within @c tf_timeout.
+   */
+  bool lookupWorldTransform(const std::string& frame, Eigen::Affine3d& T_world_frame, std::string& error) const;
 
-    /** Set the goal configuration and compute its pose
-     * @param goal_conf The goal joint configuration
-     * @return true if the goal configuration respects the pose constraints, false otherwise
-     */
-    bool setGoalConfiguration(const Eigen::VectorXd& goal_conf);
-
-
-    /** Get Constraints Manager
-     * @return pointer to the PoseConstraintsManager instance
-     */
-    PoseConstraintsManager::Ptr getConstraintsManager() const { return pose_constraints_manager_; }
-
-
-    /** Set the goal pose and compute its IK solutions
-     * @param goal_pose The goal end-effector pose
-     * @return true if the goal pose respects the pose constraints, false otherwise
-     */
-    bool setGoalPose(const Eigen::Affine3d& goal_pose);
-
-
-    /** Get Display
-     * @return pointer to the Display instance
-     */
-    graph::display::DisplayPtr getDisplay() const { return display_; }
-    
-    
-
-    /** Enable or disable logging
-     * @param enable True to enable logging, false to disable
-     */
-    void setLogging(const bool& enable);
-
-    /** Solve the planning problem within a given timeout
-     * @param timeout The maximum time allowed for planning (in seconds)
-     * @param solution The resulting path if a solution is found
-     * @param planning_info Statistics of the planning run (times, iterations, rejections)
-     * @return true if a solution is found, false otherwise
-     */
-    bool solve(const double& timeout,
-               graph::core::PathPtr& solution,
-               info& planning_info);
-
-    /**
-     * @brief Tool pose of the start configuration, in the world frame.
-     */
-    Eigen::Affine3d getStartPose() const { return T_w_start; }
-    /**
-     * @brief Pose of the tool in the flange frame.
-     */
-    Eigen::Affine3d getFlangeToToolPose() const { return T_f_t; }
-    /**
-     * @brief Pose of the robot base in the world frame.
-     */
-    Eigen::Affine3d getWorldToBaseTransform() const { return T_w_b; }
-  protected:
-    Eigen::VectorXd start_config_;
-    Eigen::Affine3d goal_pose_;
-    rclcpp::Node::SharedPtr node_;
-    std::shared_ptr<ik_solver::IkSolver> ik_solver_;
-    graph::core::CollisionCheckerPtr checker_;
-    graph::core::LoggerPtr logger_;
-    graph::core::SamplerPtr sampler_;
-    graph::core::MetricsPtr metrics_;
-    unsigned int desired_solutions = 32;
-    unsigned int min_stall_iterations = 100;
-    unsigned int max_stall_iterations = 1000;
-    ik_solver::Configurations goal_configurations_;
-    std::string world_frame_ = "world";
-    std::string tool_frame_ = "ur10_tool0";
-    double max_distance = 0.1;
-    bool use_kdtree = true;
-    double goal_bias = 0.05;
-
-    Eigen::Affine3d T_w_b; // world to base
-    Eigen::Affine3d T_f_t; // flange to tool
-    Eigen::Affine3d T_b_w; // base to world
-    Eigen::Affine3d T_t_f; // tool to flange
-    Eigen::Affine3d T_w_start; // world to start pose
-
-    PoseConstraintsManager::Ptr  pose_constraints_manager_;
-
-
-    bool print_log_ = false;
-
-    graph::display::DisplayPtr display_;
-  };
+  std::string world_frame_;  ///< Frame of the constraints.
+  std::string tool_frame_;  ///< Constrained tool frame.
+  double tf_timeout_;  ///< TF lookup timeout [s].
+  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;  ///< TF buffer of the IK solver.
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;  ///< TF listener.
+  std::unique_ptr<pluginlib::ClassLoader<ik_solver::IkSolver>> ik_loader_;  ///< Must outlive ik_solver_.
+  std::shared_ptr<ik_solver::IkSolver> ik_solver_;  ///< In-process IK solver, used for the forward kinematics.
+};
 
 }  // namespace pose_constraints_planner

@@ -5,132 +5,83 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
-
+find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
-find_package(rosidl_default_runtime REQUIRED)
-
-
-find_package(moveit_collision_checker REQUIRED)
-find_package(moveit_msgs REQUIRED)
-find_package(visualization_msgs REQUIRED)
-find_package(moveit_visual_tools REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
-find_package(urdfdom REQUIRED)
-find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
+find_package(moveit_msgs REQUIRED)
 find_package(graph_core REQUIRED)
-find_package(graph_display REQUIRED)
+find_package(mirrt_star REQUIRED)
 find_package(ik_solver REQUIRED)
+# The exported ik_solver targets link urdfdom::* without finding it
+find_package(urdfdom REQUIRED)
+find_package(parallel_multigoal_planner REQUIRED)
 find_package(pose_constraints_msgs REQUIRED)
 
-find_package(ament_cmake_python REQUIRED)
-find_package(moveit_core REQUIRED)
-find_package(moveit_ros_planning_interface REQUIRED)
-
-find_package(control_msgs REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
-
+# Python module of the constraint visualizer
 ament_python_install_package(${PROJECT_NAME})
 
-
-set(DEPS_LIB
-    graph_core
-    )
-set(DEPS_TARGET
-    graph_core::graph_core
-    )
-
-set(ROS_DEPS
-    rclcpp
-    graph_display
-    visualization_msgs
-    moveit_visual_tools
-    tf2_eigen
-    ik_solver
-    moveit_collision_checker
-    moveit_core
-    moveit_ros_planning_interface
-    pose_constraints_msgs
-    )
-# ament_target_dependencies() is removed in recent ROS 2 distros: link the exported targets
-set(ROS_DEPS_TARGETS)
-foreach(dep IN LISTS ROS_DEPS)
-  list(APPEND ROS_DEPS_TARGETS ${${dep}_TARGETS})
-endforeach()
-
-add_library(pose_constraints_planner SHARED
-    src/pose_constraints_planner/pose_constraints_manager.cpp
-    src/pose_constraints_planner/pose_constraints_planner.cpp
-    src/pose_constraints_planner/plan_with_constraints_action_server.cpp
-    src/pose_constraints_planner/pose_constraints_path_local_optimizer.cpp
+add_library(${PROJECT_NAME} SHARED
+  src/${PROJECT_NAME}/pose_constraints_manager.cpp
+  src/${PROJECT_NAME}/pose_constraints_evaluator.cpp
+  src/${PROJECT_NAME}/pose_constrained_sampler.cpp
+  src/${PROJECT_NAME}/pose_constrained_collision_checker.cpp
+  src/${PROJECT_NAME}/pose_constrained_multigoal_solver.cpp
+  src/${PROJECT_NAME}/pose_constraints_planner.cpp
+  src/${PROJECT_NAME}/plan_with_constraints_action_server.cpp
 )
-target_include_directories(pose_constraints_planner PUBLIC
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
-
-target_compile_features(pose_constraints_planner PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-
-target_link_libraries(pose_constraints_planner
-  PUBLIC
-    graph_core::graph_core
-    ik_solver::ik_solver
-    graph_display::graph_display
-    pose_constraints_msgs::pose_constraints_msgs__rosidl_generator_cpp
-)
-
-# Create an alias for the library to link against easily
-add_library(pose_constraints_planner::pose_constraints_planner ALIAS pose_constraints_planner)
-
-add_executable(pose_constraints_planner_node src/pose_constraints_planner_node.cpp)
-target_include_directories(pose_constraints_planner_node PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
-
-
-
-target_compile_features(pose_constraints_planner_node PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-target_link_libraries(pose_constraints_planner_node PUBLIC
-    pose_constraints_planner::pose_constraints_planner
-    graph_core::graph_core
-    ik_solver::ik_solver
-    moveit_collision_checker::moveit_collision_checker
-    graph_display::graph_display
-    pose_constraints_msgs::pose_constraints_msgs__rosidl_generator_cpp
-    moveit_msgs::moveit_msgs__rosidl_generator_cpp
-    pose_constraints_msgs::pose_constraints_msgs__rosidl_typesupport_cpp
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
+target_link_libraries(${PROJECT_NAME} PUBLIC
+  graph_core::graph_core
+  mirrt_star::mirrt_star
+  ik_solver::ik_solver
+  parallel_multigoal_planner::parallel_multigoal_planner
+  ${pose_constraints_msgs_TARGETS}
+  ${moveit_msgs_TARGETS}
+  ${rclcpp_TARGETS}
+  ${rclcpp_action_TARGETS}
+  ${pluginlib_TARGETS}
+  ${tf2_ros_TARGETS}
+  ${tf2_eigen_TARGETS}
 )
+add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 
-target_link_libraries(pose_constraints_planner_node PUBLIC ${rclcpp_TARGETS} ${rclcpp_action_TARGETS} ${moveit_core_TARGETS} ${moveit_ros_planning_interface_TARGETS})
+add_executable(${PROJECT_NAME}_node src/${PROJECT_NAME}_node.cpp)
+target_link_libraries(${PROJECT_NAME}_node PUBLIC ${PROJECT_NAME})
 
-
-install(TARGETS
-        pose_constraints_planner
-        EXPORT export_${PROJECT_NAME}
-        DESTINATION lib
+install(TARGETS ${PROJECT_NAME}
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
-
-install(TARGETS pose_constraints_planner_node
-        DESTINATION lib/${PROJECT_NAME})
-
+install(TARGETS ${PROJECT_NAME}_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS
+  pose_constraints_planner/geometric_constraints_visualizer.py
+  scripts/pose_constraints_planner_test.py
+  scripts/plan_example.py
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(${DEPS_LIB} ${ROS_DEPS})
-
-
-
-
-
-install(DIRECTORY launch config
-    DESTINATION share/${PROJECT_NAME})
-
-install(PROGRAMS
-    pose_constraints_planner/geometric_constraints_visualizer.py
-    DESTINATION lib/${PROJECT_NAME}
+ament_export_dependencies(
+  rclcpp rclcpp_action pluginlib tf2_ros tf2_eigen moveit_msgs
+  graph_core mirrt_star ik_solver parallel_multigoal_planner pose_constraints_msgs
 )
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  # Unit tests: constraints, evaluator, sampler and collision checker, with a fake kinematics (no ROS graph needed)
+  ament_add_gtest(test_pose_constraints test/test_pose_constraints.cpp)
+  target_link_libraries(test_pose_constraints ${PROJECT_NAME})
+endif()
 
 ament_package()
